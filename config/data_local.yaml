@@ -1,0 +1,18 @@
+
+selfphi: True # use own synonymous as phi estimate instead of baseline
+input_dir: "input/data"
+res_dir: "results/data"
+scratch_dir: "results/data/scratch"
+
+
+datasets: ['gpcr_ph55_20pos']
+baselines: [['gpcr_ph55_20pos']]
+
+models: ['FACS_double_sample_repq', 'FACS_double_sample_repq_nopos']
+methods: ['enrich2', 'ML', 'MoM', 'weight_mean']
+
+prop_masked: [0.1]
+n_masked_iter: 1
+
+SHELL: "zsh"
+RCFILE: ".zshrc"

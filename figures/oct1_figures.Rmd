@@ -1,0 +1,746 @@
+---
+title: "sims_figures.Rmd"
+author: "Jerome Freudenberg"
+date: "2024-11-26"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+
+## Read in OCT1 results
+```{r}
+# Read in tsv
+
+tsv_oct1_rescaled <- read_tsv("/Users/jerome/DocuLocal/DMS/sim-DMS-FACS/hoffman_output/data_baselines_inc_fixed_phi/data/oct1_rescaled/baseline_oct1_rescaled/FACS_double_sample_repq_plots/variant_scores.tsv")
+
+tsv_oct1_rescaled <- distinct(tsv_oct1_rescaled)
+tsv_oct1_rescaled <- tsv_oct1_rescaled[order(tsv_oct1_rescaled$mutation, tsv_oct1_rescaled$position),]
+tsv_oct1_rescaled$discovery05 <- as.numeric(tsv_oct1_rescaled$lfsr < 0.05) * sign(tsv_oct1_rescaled$effect)
+tsv_oct1_rescaled$discovery10 <- as.numeric(tsv_oct1_rescaled$lfsr < 0.10) * sign(tsv_oct1_rescaled$effect)
+tsv_oct1_rescaled$effect_disc <- tsv_oct1_rescaled$lfsr < 0.05
+tsv_oct1_rescaled <- tsv_oct1_rescaled %>% arrange(mutation, position)
+
+
+```
+
+## Plot results
+```{r}
+source("../../src/plot_func.R")
+# discovery heatmap
+tsv_oct1_rescaled$discovery <- ifelse(tsv_oct1_rescaled$discovery05 == -1, "LOF", ifelse(tsv_oct1_rescaled$discovery05 == 1, "GOF", "Not significant"))
+
+scoreHeatmap(tsv_oct1_rescaled, "data_figures/oct1", score.col="discovery", name="oct1_rescaled_discovery05_heatmap_repq", x.text=2.5, seq.text=0.75, y.text=2, discovery_score=T, npos=184, ht=4)
+
+# score heatmap
+scoreHeatmap(tsv_oct1_rescaled, "data_figures/oct1", score.col="effect", name="oct1_rescaled_score_heatmap_repq", x.text=2.5, seq.text=0.75, y.text=2, npos=184, ht=4)
+
+source("../../src/plot_func.R")
+scoreHeatmap(tsv_oct1_rescaled[tsv_oct1_rescaled$position > 281 & tsv_oct1_rescaled$position < 321,], "data_figures/oct1", score.col="discovery", name="oct1_rescaled_discovery05_heatmap_repq_281-322", x.text=6, seq.text=3, y.text=8, discovery_score=T, npos=40, ht=4, wd = 7.5)
+
+scoreHeatmap(tsv_oct1_rescaled[tsv_oct1_rescaled$position > 281 & tsv_oct1_rescaled$position < 321,], "data_figures/oct1", score.col="effect", name="oct1_rescaled_score_heatmap_repq_281-322", x.text=6, seq.text=3, y.text=8, npos=40, ht=4, wd = 7.5)
+
+# lfsr heatmap
+# scoreHeatmap(tsv_oct1_rescaled, "data_figures/oct1", score.col="lfsr", name="oct1_rescaled_lfsr_heatmap", x.text=2.5, seq.text=0.75, y.text=2)
+
+# position plots: all, GOF, LOF
+# oct1 position by number significant
+tsv_oct1_rescaled$effect_ifdisc <- ifelse(tsv_oct1_rescaled$discovery05, tsv_oct1_rescaled$effect, 0)
+# all
+tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum=sum(abs(effect_ifdisc)))
+p_pos_all <- ggplot(tsv_oct1_rescaled, aes(x=position, y=pos_sum)) + geom_line() + theme_bw() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20))
+# ggsave("plots/pos_scores.png", p_pos_all, width=20)
+# GOF
+# LOF
+
+```
+
+```{r}
+# pdb structure
+library(bio3d)
+map_scores_pdb <- function(input_pdb, mapping_scores, field, selection = NULL) {
+  
+  if (is.null(selection)) {
+    
+    selection = atom.select(input_pdb, "protein")
+  }
+  
+  output_pdb = trim.pdb(input_pdb, selection)
+  
+  for (i in seq_len(dim(output_pdb$atom[1]))) {
+    
+    if (output_pdb$atom[i,]$resno > 0) {
+      
+      n = as.character(output_pdb$atom[i,]$resno)
+      j = which(mapping_scores['position'] == n)
+
+      if (length(j) == 0) {
+        score = 0
+        
+      } else {
+        score = mapping_scores[j, field][[1]]
+      }
+      
+      if (!is.na(score)) {
+        
+        output_pdb$atom[i,]$b = score
+        
+      } else {
+        
+        output_pdb$atom[i,]$b = 0
+        
+      }
+    } else {
+      output_pdb$atom[i,]$b = 0
+    }
+  }
+  
+  return(output_pdb)
+}
+
+# alpha_struct <- read.pdb("/Users/jerome/DocuLocal/DMS/sim-DMS-FACS/datasets/OCT1/oct1_af.pdb")
+# x = map_scores_pdb(alpha_struct, tsv_oct1_rescaled, "discovery05")
+# write.pdb(x, file="plots/disc05_mapped_struct_oct1.pdb")
+
+
+
+```
+
+
+```{r}
+source("../../src/plot_func.R")
+# make 3d count plot
+oct1_rescaled_fit_df <- readRDS("/Users/jerome/DocuLocal/DMS/sim-DMS-FACS/hoffman_output/data_baselines_inc_fixed_phi/data/oct1_rescaled/baseline_oct1_rescaled/fitted_df.RData")
+
+getwd()
+make_3d_plot(oct1_rescaled_fit_df, "data_figures/oct1/counts_plot")
+
+
+```
+
+
+## Add other methods
+```{r}
+source("../../src/methods/diagnostics.R")
+oct1_rescaled_fit_df <- readRDS("/Users/jerome/DocuLocal/DMS/sim-DMS-FACS/hoffman_output/data_baselines_inc_fixed_phi/data/oct1_rescaled/baseline_oct1_rescaled/fitted_df.RData")
+# label discoveries
+effect_cols <- c("enrich_score", "weight_effect_mean", "ML_effect_mean")
+sd_cols <- c(NA,"enrich_SE", "weight_effect_se", "ML_effect_se")
+c_thresh <- 0.95
+oct1_rescaled_fit_df_called <- label_significant(oct1_rescaled_fit_df, effect_cols, sd_cols, 0.95)
+
+oct1_method_df <- distinct(oct1_rescaled_fit_df_called[c("hgvs", 
+                                                         "enrich_score", "enrich_pval_adjusted", "enrich_score_disc", "enrich_score_syn_sd_disc",
+                                                         "weight_effect_mean", "weight_effect_mean_syn_sd_disc", "weight_effect_se")])
+colnames(oct1_method_df) <- c("hgvs", "enrich", "enrich_pval", "enrich_pval_disc", "enrich_syn_sd_disc", "weight_mean", "weight_mean_disc", "weight_mean_se")
+tsv_oct1_rescaled <- merge(tsv_oct1_rescaled, oct1_method_df)
+
+scoreHeatmap(tsv_oct1_rescaled, "plots", score.col="enrich", name="oct1_enrich_score_heatmap", x.text=2.5, seq.text=0.75, y.text=2)
+scoreHeatmap(tsv_oct1_rescaled, "plots", score.col="weight_mean", name="oct1_weight_effect_heatmap", x.text=2.5, seq.text=0.75, y.text=2)
+
+
+```
+
+## Comparison scatter w/ original paper approach
+```{r}
+surv_scores <- read_csv("/Users/jerome/DocuLocal/DMS/sim-DMS-FACS/datasets/OCT1/OCT1_DMS/data/oct1_combined_scores.csv")
+tsv_oct1_rescaled <- merge(tsv_oct1_rescaled, surv_scores, all.x=T)
+
+syn_gfp_scores <- tsv_oct1_rescaled[tsv_oct1_rescaled$type=="synonymous",]$GFP_score
+sd_distr <- MASS::fitdistr(syn_gfp_scores[!is.na(syn_gfp_scores)], "normal")
+tsv_oct1_rescaled$discovery_sd <- as.numeric((tsv_oct1_rescaled$GFP_score < sd_distr$estimate[1] - 2*sd_distr$estimate[2]) | 
+  (tsv_oct1_rescaled$GFP_score > sd_distr$estimate[1] + 2*sd_distr$estimate[2])) * sign(tsv_oct1_rescaled$GFP_score)
+tsv_oct1_rescaled$orig_disc <- tsv_oct1_rescaled$discovery_sd != 0
+
+tsv_oct1_rescaled$discovery_cat <- ifelse(!is.na(tsv_oct1_rescaled$GFP_score) & 
+                                            tsv_oct1_rescaled$discovery05 != 0 & 
+                                            tsv_oct1_rescaled$discovery_sd != 0, "both",
+                                          ifelse(tsv_oct1_rescaled$discovery05 != 0, "Lilace", 
+                                                 ifelse(!is.na(tsv_oct1_rescaled$GFP_score) & tsv_oct1_rescaled$discovery_sd != 0, "original approach", "neither")))
+
+cat_counts <- tsv_oct1_rescaled[!is.na(tsv_oct1_rescaled$discovery_cat),] %>% group_by(discovery_cat) %>% summarise(count = n())
+tsv_oct1_rescaled$effect_col <- factor(tsv_oct1_rescaled$discovery_cat, levels=cat_counts$discovery_cat)
+tsv_oct1_rescaled <- tsv_oct1_rescaled[order(tsv_oct1_rescaled$effect_col),]
+
+call_colors <- setNames(c('#4e79a7', '#76b7b2', '#f28e2b', '#e15759'),
+                          c("both", "neither", "Lilace", "original approach"))
+labels <- paste0(cat_counts$discovery_cat, " (", cat_counts$count, ")")
+
+p <- ggplot(tsv_oct1_rescaled, aes(x=effect, y=GFP_score, col=as.factor(effect_col))) + geom_point(alpha=0.3) +
+    theme_cowplot() + labs(x="Lilace", y="original paper") +
+    # scale_color_discrete(labels = labels) +
+    scale_color_manual(labels = labels, values=call_colors) +
+    guides(color=guide_legend(title="Discovery calls")) +
+    theme(text = element_text(size = 20), axis.text = element_text(size = 20))
+
+print(p)
+ggsave("data_figures/oct1/comparison_scatter.png", p, height=5, width=10)
+
+
+# ggplot(mapping=aes(x=effect, y=GFP_score, col=as.factor(effect_col))) + lapply(split(tsv_oct1_rescaled, tsv_oct1_rescaled$effect_col), function(x) stat_density_2d(data=x, alpha=0.8)) +
+#     theme_bw() + labs(x="Lilace", y="original paper") +
+#     # scale_color_discrete(labels = labels) +
+#     scale_color_manual(labels = labels, values=call_colors) +
+#     guides(color=guide_legend(title="Discovery calls"))
+
+# 
+# source("../../src/plot_func.R")
+# scoreHeatmap(tsv_oct1_rescaled, "plots/figures/oct1_supp", score.col="discovery_cat", name="oct1_discovery_cat_heatmap", x.text=2.5, seq.text=0.75, y.text=2, compare_score=T)
+```
+
+# get numbers of model differences versus original approach
+```{r}
+
+
+
+
+```
+
+
+# picked example variants versus original approach
+```{r}
+
+# number not called original but called by Lilace: 65
+# number other LOF in those positions
+Lilace_LOF_pos <- tsv_oct1_rescaled[tsv_oct1_rescaled$discovery_cat=="Lilace" & tsv_oct1_rescaled$effect< 0,]$position %>% unique
+Lilace_GOF_pos <- tsv_oct1_rescaled[tsv_oct1_rescaled$discovery_cat=="Lilace" & tsv_oct1_rescaled$effect> 0,]$position %>% unique
+lof_count_df <- tsv_oct1_rescaled[tsv_oct1_rescaled$position %in% Lilace_LOF_pos,] %>% group_by(position) %>% mutate(lof_count=sum(discovery05==-1))
+gof_count_df <- tsv_oct1_rescaled[tsv_oct1_rescaled$position %in% Lilace_GOF_pos,] %>% group_by(position) %>% mutate(lof_count=sum(discovery05==1))
+# LOF called only by model (mention pos effect): pos 265 S + T
+lof_count_df[lof_count_df$position==265 & lof_count_df$discovery_cat=="Lilace",]
+gof_count_df[gof_count_df$discovery_cat=="Lilace",]
+
+
+# GOF w/ large variance called only by sd: G86P
+max_GFP_SE <- tsv_oct1_rescaled[tsv_oct1_rescaled$discovery_cat=="original approach",]$GFP_SE %>% max(na.rm=T)
+tsv_oct1_rescaled[!is.na(tsv_oct1_rescaled$GFP_SE) & tsv_oct1_rescaled$discovery_cat=="original approach" & tsv_oct1_rescaled$GFP_SE == max_GFP_SE,]
+# LOF w/ large variance called only by sd: A416L
+GFP_lfsr <- tsv_oct1_rescaled[tsv_oct1_rescaled$discovery_cat=="original approach",]$lfsr %>% sort()
+tsv_oct1_rescaled[!is.na(tsv_oct1_rescaled$GFP_SE) & tsv_oct1_rescaled$discovery_cat=="original approach" & tsv_oct1_rescaled$lfsr == GFP_lfsr[length(GFP_lfsr)],]
+
+GFP_lfsr_gof <- tsv_oct1_rescaled[!is.na(tsv_oct1_rescaled$GFP_SE) & tsv_oct1_rescaled$discovery_cat=="original approach" & tsv_oct1_rescaled$effect>0,]$lfsr %>% sort()
+tsv_oct1_rescaled[!is.na(tsv_oct1_rescaled$GFP_SE) & tsv_oct1_rescaled$discovery_cat=="original approach" & tsv_oct1_rescaled$lfsr == GFP_lfsr_gof[length(GFP_lfsr_gof)],]
+# effect se by position plot -> highlight terminal domain GOF only called by sd: Q547A
+
+# GOF called only by model? (No pos effect): F44Y, I392F
+
+param <- readr::read_tsv(paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/oct1_rescaled/baseline_oct1_rescaled/FACS_double_sample_repq_df_baseline.tsv"))
+q <- param[startsWith(param$param, "q"),2][[1]]
+typecolors <- setNames( c('navy', 'purple', 'maroon', 'lightgreen'), levels(as.factor(df$type)))
+# y_max <- c(50, 50, 50, 130, 130, 130, 20, 20, 20)
+y_max <- c(110, 110, 110)
+
+counts <- oct1_rescaled_fit_df_called %>% select(c("c_0", "c_1", "c_2", "c_3"))
+type <- oct1_rescaled_fit_df_called$type
+hgvs <- oct1_rescaled_fit_df_called$hgvs
+# props <- cbind(counts / df$n_counts, type, hgvs)
+counts_df <- cbind(counts, type, hgvs)
+
+indices <- (oct1_rescaled_fit_df_called$position == 265 & oct1_rescaled_fit_df_called$mutation=="P") | #Q265P lof only model
+  (oct1_rescaled_fit_df_called$position == 44 & oct1_rescaled_fit_df_called$mutation=="Y") | #F44Y gof only model
+  (oct1_rescaled_fit_df_called$position == 392 & oct1_rescaled_fit_df_called$mutation=="F") | # I392F gof only model
+  (oct1_rescaled_fit_df_called$position == 416 & oct1_rescaled_fit_df_called$mutation=="L") | # A416L gof w/ large variance only by sd
+  (oct1_rescaled_fit_df_called$position == 413 & oct1_rescaled_fit_df_called$mutation=="N") # A413N LOF w/ large variance only by sd
+
+selected <- counts_df[indices,]
+n_counts <- oct1_rescaled_fit_df_called[indices,]$n_counts
+q_mat <- t(sapply(oct1_rescaled_fit_df_called[indices,]$n_counts, function(i) i*q))
+
+  
+p_list <- vector(mode="list", length=sum(indices))
+for (i in 1:sum(indices)) {
+  plot_df <- reshape2::melt(selected[i,])
+  plot_df$q_expec <- q_mat[i,]
+  p <- ggplot(plot_df, aes(x=variable, y=value, fill=as.factor(type))) + geom_bar(stat="identity", alpha=0.5) +
+      geom_errorbar(y = plot_df$q_expec, ymin = plot_df$q_expec, ymax = plot_df$q_expec, color="forestgreen",lty=2) + scale_fill_manual(values = typecolors) +
+      xlab("Bin") + ylab("Count") + guides(fill=guide_legend(title="Mutation type")) + ggtitle(plot_df$hgvs) + theme_bw() + ylim(c(0, y_max[i]))
+  p_list[[i]] <- p
+}
+
+p_list[[1]] / p_list[[2]] / p_list[[3]]
+p_list[[4]] / p_list[[5]] / p_list[[6]]
+p_list[[7]] / p_list[[8]] / p_list[[9]]
+p_list[[10]] / p_list[[11]] / p_list[[12]]
+p_list[[13]]
+```
+
+
+## Comparison plots vs enrich2
+```{r}
+source("../../src/plot_func.R")
+# diff scatter plot
+tsv_oct1_rescaled$enrich_disc <- tsv_oct1_rescaled$enrich_pval_disc
+model_enrich_scatter <- plot_method_scatter(tsv_oct1_rescaled, "effect", "enrich", "Lilace", "Enrich2 (p-val)", F)
+print(model_enrich_scatter)
+ggsave("data_figures/oct1/oct1_enrich_scatter.png", model_enrich_scatter, width=9, height=6)
+model_enrich_scatter <- plot_method_scatter(tsv_oct1_rescaled, "effect", "enrich", "Lilace", "Enrich2", T)
+print(model_enrich_scatter)
+
+tsv_oct1_rescaled$enrich_disc <- tsv_oct1_rescaled$enrich_syn_sd_disc
+model_enrich_scatter <- plot_method_scatter(tsv_oct1_rescaled, "effect", "enrich", "Lilace", "Enrich2 (2sd)", F)
+print(model_enrich_scatter)
+ggsave("data_figures/oct1/oct1_enrich_syn_sd_scatter.png", model_enrich_scatter, width=9, height=6)
+model_enrich_scatter <- plot_method_scatter(tsv_oct1_rescaled, "effect", "enrich", "Lilace", "Enrich2 (2sd)", T)
+print(model_enrich_scatter)
+# zoomed in diff
+
+# diff areas summary stats
+# TODO: use df_called to identify each area
+
+# diff heatmap
+
+
+# diff in position plots: new GOF, new LOF, false discoveries
+
+```
+
+
+
+## Comparison plots vs weighted avg
+```{r}
+source("../../src/plot_func.R")
+# diff scatter plot
+model_weight_scatter <- plot_method_scatter(tsv_oct1_rescaled, "effect", "weight_mean", "Lilace", "Mean bin", F, title="Mean bin vs Lilace effects")
+model_weight_scatter
+ggsave("data_figures/oct1/oct1_weight_scatter.png", model_weight_scatter, width=9, height=6)
+
+model_weight_scatter <- plot_method_scatter(tsv_oct1_rescaled, "effect", "weight_mean", "Lilace", "Mean bin", T)
+model_weight_scatter
+ggsave("data_figures/oct1/oct1_weight_contour.png", model_weight_scatter, width=9, height=6)
+# zoomed in diff plots
+selected_variants <- c(...)
+
+# diff areas summary stats
+# TODO: use df_called to identify each area
+
+# diff heatmap
+
+
+# diff in position plots: new GOF, new LOF, false discoveries
+
+
+```
+
+## Bin synonymous rank preservation
+```{r}
+library(ggpmisc)
+syn_rank_plot_df <- tsv_oct1_rescaled
+# plot vs weighted mean to show synonymous ranks are consistent
+syn_rank_plot_df$enrich_rank <- rank(syn_rank_plot_df$enrich)
+syn_rank_plot_df$lilace_rank <- rank(syn_rank_plot_df$effect)
+syn_rank_plot_df$weight_rank <- rank(syn_rank_plot_df$weight_mean)
+
+syn_rank_plot_df <- syn_rank_plot_df[syn_rank_plot_df$type=="synonymous" | syn_rank_plot_df$type=="missense",]
+syn_rank_plot_df <- syn_rank_plot_df[order(syn_rank_plot_df$type),]
+
+
+corr <- round(cor(syn_rank_plot_df$weight_mean, syn_rank_plot_df$effect, method="spearman"), 2)
+ggplot(syn_rank_plot_df, aes(x=weight_rank, y=lilace_rank, color=type)) + geom_point() + stat_poly_line(color="blue")  + scale_color_manual(values = c("#f28e2b", "#59a14f")) + 
+  theme_cowplot() + xlab("mean bin score") + ylab("Lilace") +
+  annotate("text", -Inf, Inf, hjust = -0.5, vjust = 2, size=5, label=paste0("spearman=", corr))
+ggplot(syn_rank_plot_df, aes(x=weight_mean, y=effect, color=type)) + geom_point() + stat_poly_line(color="blue")  + scale_color_manual(values = c("#f28e2b", "#59a14f")) + 
+  theme_cowplot() + xlab("mean bin score") + ylab("Lilace") +
+  annotate("text", -Inf, Inf, hjust = -0.5, vjust = 2, size=5, label=paste0("spearman=", corr))
+
+corr <- round(cor(syn_rank_plot_df$enrich, syn_rank_plot_df$effect, method="spearman"), 2)
+ggplot(syn_rank_plot_df, aes(x=enrich_rank, y=lilace_rank, color=type)) + geom_point() + stat_poly_line(color="blue")  + scale_color_manual(values = c("#f28e2b", "#59a14f")) + 
+  theme_cowplot() + xlab("Enrich2 score") + ylab("Lilace") +
+  annotate("text", -Inf, Inf, hjust = -0.5, vjust = 2, size=5, label=paste0("spearman=", corr))
+ggplot(syn_rank_plot_df, aes(x=enrich, y=effect, color=type)) + geom_point() + stat_poly_line(color="blue")  + scale_color_manual(values = c("#f28e2b", "#59a14f")) + 
+  theme_cowplot() + xlab("Enrich2 score") + ylab("Lilace") +
+  annotate("text", -Inf, Inf, hjust = -0.5, vjust = 2, size=5, label=paste0("spearman=", corr))
+
+
+```
+
+## Position plots by category
+```{r}
+
+tsv_oct1_rescaled$gof_effect_ifdisc <- ifelse(tsv_oct1_rescaled$discovery05 & tsv_oct1_rescaled$effect > 0, tsv_oct1_rescaled$effect, 0)
+tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum=sum(abs(gof_effect_ifdisc)))
+ggplot(tsv_oct1_rescaled, aes(x=position, y=pos_sum)) + geom_line() + theme_bw() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20)) + ggtitle("GOF effect")
+
+tsv_oct1_rescaled$lof_effect_ifdisc <- ifelse(tsv_oct1_rescaled$discovery05 & tsv_oct1_rescaled$effect < 0, tsv_oct1_rescaled$effect, 0)
+tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum=sum(abs(lof_effect_ifdisc)))
+ggplot(tsv_oct1_rescaled, aes(x=position, y=pos_sum)) + geom_line() + theme_bw() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20)) + ggtitle("LOF effect")
+
+tsv_oct1_rescaled$onlymodel_effect_ifdisc <- ifelse(tsv_oct1_rescaled$discovery05 & tsv_oct1_rescaled$discovery_cat =="Lilace", tsv_oct1_rescaled$effect, 0)
+tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum=sum(abs(onlymodel_effect_ifdisc)))
+ggplot(tsv_oct1_rescaled, aes(x=position, y=pos_sum)) + geom_line() + theme_bw() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20)) + ggtitle("only Lilace effect")
+
+tsv_oct1_rescaled$only2sd_effect_ifdisc <- ifelse(tsv_oct1_rescaled$discovery_cat =="original approach", tsv_oct1_rescaled$effect, 0)
+tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum=sum(abs(only2sd_effect_ifdisc)))
+ggplot(tsv_oct1_rescaled, aes(x=position, y=pos_sum)) + geom_line() + theme_bw() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20)) + ggtitle("only 2sd effect")
+
+
+tsv_oct1_rescaled$gof_onlymodel_effect_ifdisc <- ifelse(tsv_oct1_rescaled$discovery_cat =="Lilace" & tsv_oct1_rescaled$effect > 0, tsv_oct1_rescaled$effect, 0)
+tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum=sum(abs(gof_onlymodel_effect_ifdisc)))
+ggplot(tsv_oct1_rescaled, aes(x=position, y=pos_sum)) + geom_line() + theme_bw() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20)) + ggtitle("only Lilace GOF effect")
+
+
+tsv_oct1_rescaled$gof_only2sd_effect_ifdisc <- ifelse(tsv_oct1_rescaled$discovery_cat =="original approach" & tsv_oct1_rescaled$effect > 0, tsv_oct1_rescaled$effect, 0)
+tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum=sum(abs(gof_only2sd_effect_ifdisc)))
+ggplot(tsv_oct1_rescaled, aes(x=position, y=pos_sum)) + geom_line() + theme_bw() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20)) + ggtitle("only 2sd GOF effect")
+
+tsv_oct1_rescaled$lof_onlymodel_effect_ifdisc <- ifelse(tsv_oct1_rescaled$discovery_cat =="Lilace" & tsv_oct1_rescaled$effect < 0, tsv_oct1_rescaled$effect, 0)
+tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum=sum(abs(lof_onlymodel_effect_ifdisc)))
+ggplot(tsv_oct1_rescaled, aes(x=position, y=pos_sum)) + geom_line() + theme_bw() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20)) + ggtitle("only Lilace LOF effect")
+
+tsv_oct1_rescaled$lof_only2sd_effect_ifdisc <- ifelse(tsv_oct1_rescaled$discovery_cat =="original approach" & tsv_oct1_rescaled$effect < 0, tsv_oct1_rescaled$effect, 0)
+tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum=sum(abs(lof_only2sd_effect_ifdisc)))
+ggplot(tsv_oct1_rescaled, aes(x=position, y=pos_sum)) + geom_line() + theme_bw() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20)) + ggtitle("only 2sd LOF effect")
+
+```
+
+
+## Position GOF / LOF discovery differences plot overlaid on agree plot
+```{r}
+# getwd()
+# comp_method <- "orig_disc"
+# tsv_oct1_rescaled[is.na(tsv_oct1_rescaled[[comp_method]]),][[comp_method]] <- F
+# # make plot where agree + separate lines for the additional discoveries
+# 
+# # overlay 2sd and new plot pos sums
+# 
+# # make top position plot (GOF)
+# tsv_oct1_rescaled$gof_effect_both <- ifelse((tsv_oct1_rescaled$discovery05 == 1 & tsv_oct1_rescaled[[comp_method]]) & 
+#                                               tsv_oct1_rescaled$effect > 0, 
+#                                               tsv_oct1_rescaled$effect, 0)
+# tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum_both_gof=sum(abs(gof_effect_both)))
+# 
+# tsv_oct1_rescaled$gof_effect_2sd <- ifelse((tsv_oct1_rescaled[[comp_method]]) &
+#                                                 tsv_oct1_rescaled$weight_mean > 0, 
+#                                               tsv_oct1_rescaled$effect, 0)
+# tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum_2sd_gof=sum(abs(gof_effect_2sd)))
+# 
+# tsv_oct1_rescaled$gof_effect_model <- ifelse((tsv_oct1_rescaled$discovery05 == 1) &
+#                                                 tsv_oct1_rescaled$effect > 0, 
+#                                               tsv_oct1_rescaled$effect, 0)
+# tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum_model_gof=sum(abs(gof_effect_model)))
+# 
+# p_gof <- ggplot(tsv_oct1_rescaled, aes(x=position)) + 
+#   geom_line(aes(y=pos_sum_both_gof, col="both"), alpha=0.5) +  
+#   geom_line(aes(y=pos_sum_2sd_gof, col="2sd"), alpha=0.5) +  
+#   geom_line(aes(y=pos_sum_model_gof, col="model"), alpha=0.5) +
+#   scale_color_manual(name = "Discovery set", values = c("both" = "black", "model" = "cyan", "2sd" = "darkorange")) +
+#   theme_cowplot() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20)) + ylab("GOF effect by position") + 
+#   theme(axis.title.x = element_blank(), axis.text.x = element_blank()) +
+#   theme(plot.margin = unit(c(0,0,0,0), "cm"))
+# ggsave(paste0("oct1_main/pos_scores_gof_", comp_method, ".png"), p_gof, width=20)
+# 
+# 
+# # make bottom position plot (LOF)
+# tsv_oct1_rescaled$lof_effect_both <- ifelse((tsv_oct1_rescaled$discovery05 == -1 & tsv_oct1_rescaled[[comp_method]]) &
+#                                                 tsv_oct1_rescaled$effect < 0, 
+#                                               tsv_oct1_rescaled$effect, 0)
+# tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum_both_lof=sum(abs(lof_effect_both)))
+# 
+# tsv_oct1_rescaled$lof_effect_2sd <- ifelse((tsv_oct1_rescaled[[comp_method]]) &
+#                                                 tsv_oct1_rescaled$weight_mean < 0, 
+#                                               tsv_oct1_rescaled$effect, 0)
+# tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum_2sd_lof=sum(abs(lof_effect_2sd)))
+# 
+# tsv_oct1_rescaled$lof_effect_model <- ifelse((tsv_oct1_rescaled$discovery05 == -1) &
+#                                                 tsv_oct1_rescaled$effect < 0, 
+#                                               tsv_oct1_rescaled$effect, 0)
+# tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum_model_lof=sum(abs(lof_effect_model)))
+# 
+# p_lof <- ggplot(tsv_oct1_rescaled, aes(x=position)) + 
+#   geom_line(aes(y=pos_sum_both_lof, col="both"), alpha=0.5) +  
+#   geom_line(aes(y=pos_sum_2sd_lof, col="2sd"), alpha=0.5) +  
+#   geom_line(aes(y=pos_sum_model_lof, col="model"), alpha=0.5) +
+#   scale_y_reverse() +
+#   scale_color_manual(name = "Discovery set", values = c("both" = "black", "model" = "cyan", "2sd" = "darkorange")) +
+#   theme_cowplot() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20), position="top")+ ylab("LOF effect by position") +
+#   theme(plot.margin = unit(c(0,0,0,0), "cm"))
+# ggsave(paste0("oct1_main/pos_scores_lof_", comp_method, ".png"), p_lof, width=20)
+# 
+# # combine plots
+# p_full <- p_gof / p_lof + plot_layout(axis_titles = "collect", guides = "collect")
+# ggsave(paste0("oct1_main/pos_scores_", comp_method, ".png"), p_full, width=20)
+# 
+
+# only model
+
+comp_method <- "enrich_pval_disc"
+comp_score <- "enrich"
+comp_name <- "Enrich2"
+
+# comp_method <- "weight_mean_disc"
+# comp_score <- "weight_mean"
+# comp_name <- "Mean bin"
+# make same plot using only signifance and not effect size
+# overlay 2sd and new plot pos sums
+tsv_oct1_rescaled$gof_effect_both <- ifelse((tsv_oct1_rescaled$discovery05 == 1 & tsv_oct1_rescaled[[comp_method]]) &
+                                                tsv_oct1_rescaled$effect > 0, 
+                                              1, 0)
+tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum_both_gof=sum(abs(gof_effect_both)))
+
+tsv_oct1_rescaled$gof_effect_2sd <- ifelse((tsv_oct1_rescaled[[comp_method]]) &
+                                                tsv_oct1_rescaled[[comp_score]] > 0, 
+                                              1, 0)
+tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum_2sd_gof=sum(abs(gof_effect_2sd)))
+
+tsv_oct1_rescaled$gof_effect_model <- ifelse((tsv_oct1_rescaled$discovery05 == 1) &
+                                                tsv_oct1_rescaled$effect > 0, 
+                                              1, 0)
+tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum_model_gof=sum(abs(gof_effect_model)))
+
+
+set_lwd <- 1
+
+
+text_size <- 20
+axis_text_size <- 20
+scale_color <- c("black", "cyan", "orange")
+names(scale_color) <- c("both", "Lilace", comp_name)
+p_gof <- ggplot(tsv_oct1_rescaled, aes(x=position)) + 
+  geom_line(aes(y=pos_sum_both_gof, col="both"), alpha=0.5, lwd=set_lwd) +  
+  geom_line(aes(y=pos_sum_2sd_gof, col=!!comp_name), alpha=0.5, lwd=set_lwd) +  
+  geom_line(aes(y=pos_sum_model_gof, col="Lilace"), alpha=0.5, lwd=set_lwd) +
+  scale_color_manual(name = "Discovery set", values = scale_color) +
+  theme_cowplot() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20)) + ylab("# called GOF by position") + 
+  theme(axis.title.x = element_blank(), 
+        text = element_text(size = text_size),
+        axis.text = element_text(size = axis_text_size), axis.text.x = element_blank(), plot.margin = unit(c(0,0,0,0), "cm"))
+ggsave(paste0("data_figures/oct1/pos_sig_gof_", comp_method, ".png"), p_gof, width=20)
+
+# make bottom position plot (LOF)
+tsv_oct1_rescaled$lof_effect_both <- ifelse((tsv_oct1_rescaled$discovery05 == -1 & tsv_oct1_rescaled[[comp_method]]) &
+                                                tsv_oct1_rescaled$effect < 0, 
+                                              1, 0)
+tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum_both_lof=sum(abs(lof_effect_both)))
+
+tsv_oct1_rescaled$lof_effect_2sd <- ifelse((tsv_oct1_rescaled[[comp_method]]) &
+                                                tsv_oct1_rescaled[[comp_score]] < 0, 
+                                              1, 0)
+tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum_2sd_lof=sum(abs(lof_effect_2sd)))
+
+tsv_oct1_rescaled$lof_effect_model <- ifelse((tsv_oct1_rescaled$discovery05 == -1) &
+                                                tsv_oct1_rescaled$effect < 0, 
+                                              1, 0)
+tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum_model_lof=sum(abs(lof_effect_model)))
+
+p_lof <- ggplot(tsv_oct1_rescaled, aes(x=position)) + 
+  geom_line(aes(y=pos_sum_both_lof, col="both"), alpha=0.5, lwd=set_lwd) +  
+  geom_line(aes(y=pos_sum_2sd_lof, col=!!comp_name), alpha=0.5, lwd=set_lwd) +  
+  geom_line(aes(y=pos_sum_model_lof, col="Lilace"), alpha=0.5, lwd=set_lwd) +
+  scale_y_reverse() +
+  scale_color_manual(name = "Discovery set", values = scale_color) +
+  theme_cowplot() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20), position="top")+ ylab("# called LOF by position") +
+  theme(text = element_text(size = text_size),
+        axis.text = element_text(size = axis_text_size), plot.margin = unit(c(0,0,0,0), "cm"))
+ggsave(paste0("data_figures/oct1/pos_sig_lof_", comp_method, ".png"), p_lof, width=20)
+
+# combine plots
+p_full <- p_gof / p_lof + plot_layout(axis_titles = "collect", guides = "collect")
+ggsave(paste0("data_figures/oct1/pos_sig_", comp_method, ".png"), p_full, width=20)
+# make manhattan plot using lfsr
+
+```
+
+```{r}
+# weight mean SE by position
+
+avg_pos_df <- tsv_oct1_rescaled %>% group_by(position) %>% summarize(mean_pos_weight_se=mean(weight_mean_se, na.rm=T))
+p <- ggplot(avg_pos_df, aes(x=position,y=mean_pos_weight_se)) + geom_point() + geom_smooth(span=0.1) + theme_cowplot() + ylab("Mean s.e. of weighted mean bin score")
+print(p)
+ggsave("data_figures/oct1/pos_weight_se.png")
+
+```
+
+
+## Discovery set differences / trends
+```{r}
+
+
+
+
+```
+
+## Compare to survivability
+```{r}
+
+# plot comparison
+surv_syn_mean <- mean(tsv_oct1_rescaled[tsv_oct1_rescaled$type=="synonymous",]$SM73_1_score, na.rm=T)
+surv_syn_sd <- sd(tsv_oct1_rescaled[tsv_oct1_rescaled$type=="synonymous",]$SM73_1_score, na.rm=T)
+lower_syn_sd_cut <- surv_syn_mean - 2*surv_syn_sd
+upper_syn_sd_cut <- surv_syn_mean + 2*surv_syn_sd
+
+abun_syn_mean <- mean(tsv_oct1_rescaled[tsv_oct1_rescaled$type=="synonymous",]$effect, na.rm=T)
+abun_syn_sd <- sd(tsv_oct1_rescaled[tsv_oct1_rescaled$type=="synonymous",]$effect, na.rm=T)
+lower_syn_sd_cut_abun <- abun_syn_mean - 2*abun_syn_sd
+upper_syn_sd_cut_abun <- abun_syn_mean + 2*abun_syn_sd
+
+ggplot(tsv_oct1_rescaled, aes(x=effect, y=SM73_1_score, col=discovery)) + geom_point() + theme_bw() + 
+  geom_hline(yintercept=lower_syn_sd_cut, linetype='dashed', col = 'red', lwd=0.5) +
+  geom_hline(yintercept=upper_syn_sd_cut, linetype='dashed', col = 'red', lwd=0.5) +
+  geom_vline(xintercept=lower_syn_sd_cut_abun, linetype='dashed', col = 'red', lwd=0.5) +
+  geom_vline(xintercept=upper_syn_sd_cut_abun, linetype='dashed', col = 'red', lwd=0.5) +
+  scale_color_manual(values=c("LOF" = "#e49444", "Not significant" = "lightgray", "GOF" = "#5778a4"), drop=FALSE, name = "model classes")
+
+
+
+```
+
+
+
+## Compare evo metrics
+```{r}
+# consurf
+# TODO: write spearman correlation
+consurf_df <- read_csv("/Users/jerome/DocuLocal/DMS/sim-DMS-FACS/datasets/OCT1/OCT1_DMS/data/consurf_scores.csv")
+colnames(consurf_df) <- c("position", "max_consurf_AA", "consurf_grade")
+tsv_oct1_rescaled <- merge(tsv_oct1_rescaled, consurf_df, all.x=T)
+
+pos_df <- tsv_oct1_rescaled %>% group_by(position, consurf_grade) %>% summarize(mean_pos_effect=mean(effect, na.rm=T))
+ggplot(pos_df, aes(x=consurf_grade, y=mean_pos_effect)) + geom_point(alpha=0.5, color="coral") + xlab("consurf score") + ylab("model pos mean effect") + theme_bw() + geom_smooth(method = "lm")
+cor(pos_df$consurf_grade, pos_df$mean_pos_effect, method="spearman", use="complete.obs")
+
+# alphamissense
+# TODO: write spearman correlation
+alphamis_df <- read_tsv("/Users/jerome/DocuLocal/DMS/sim-DMS-FACS/datasets/OCT1/OCT1_DMS/data/AlphaMissense_aa_substitutions_O15245.tsv", col_names=F)
+colnames(alphamis_df)<- c("num", "hgvs", "val", "class")
+alphamis_df$hgvs <- paste0("p.(", alphamis_df$hgvs, ")")
+tsv_oct1_rescaled <- merge(tsv_oct1_rescaled, alphamis_df, all.x=T)
+ggplot(tsv_oct1_rescaled, aes(x=effect, y=val, col=as.factor(discovery))) + geom_point(alpha=0.5) + xlab("model") + ylab("alphamis") + theme_bw()
+
+ggplot(tsv_oct1_rescaled, aes(x=effect, y=val, col=as.factor(class))) + geom_point(alpha=0.5) + xlab("model") + ylab("alphamis") + theme_bw()
+
+cor(tsv_oct1_rescaled$effect, tsv_oct1_rescaled$val, use="complete.obs", method="spearman")
+```
+
+
+## Compare other
+```{r}
+
+# add other data
+pharm_df <- read_tsv("/Users/jerome/DocuLocal/DMS/sim-DMS-FACS/datasets/OCT1/OCT1_DMS/data/PharmGKB_clinical_oct1.tsv")
+
+
+litvar_df <- read_csv("/Users/jerome/DocuLocal/DMS/sim-DMS-FACS/datasets/OCT1/OCT1_DMS/data/literature_variants.csv")
+
+pharm_df$hgvs <- paste0("p.(", pharm_df$hgvs, ")")
+tsv_oct1_rescaled <- merge(tsv_oct1_rescaled, pharm_df, all.x=T)
+tsv_oct1_rescaled <- merge(tsv_oct1_rescaled, litvar_df, all.x=T)
+
+# ukb
+
+ukb_df <- read_csv("/Users/jerome/DocuLocal/DMS/sim-DMS-FACS/datasets/OCT1/ukb_ldl.csv")
+tsv_oct1_rescaled <- merge(tsv_oct1_rescaled, ukb_df, all.x=T)
+tsv_oct1_ukb_df <- tsv_oct1_rescaled[!is.na(tsv_oct1_rescaled$beta_ldl),]
+tsv_oct1_ukb_df <- tsv_oct1_ukb_df %>% extract(INFO, into=c("AF", "AQ"), "^AF=(\\d+\\.*\\d*[eE]?[+-]?\\d+);AQ=(\\d*)$")
+tsv_oct1_ukb_df$AF <- as.numeric(tsv_oct1_ukb_df$AF)
+
+ggplot(tsv_oct1_ukb_df[tsv_oct1_ukb_df$AF > 0.001,], aes(x=effect, y=beta_ldl)) + geom_point() + theme_bw() + geom_smooth(method = "lm")
+ggplot(tsv_oct1_ukb_df[tsv_oct1_ukb_df$AF > 0.001,], aes(x=effect, y=beta_cholesterol)) + geom_point() + theme_bw() + geom_smooth(method = "lm")
+
+ggplot(tsv_oct1_ukb_df[tsv_oct1_ukb_df$discovery05 != 0,], aes(x=effect, y=beta_ldl)) + geom_point() + theme_bw() + geom_smooth(method = "lm")
+ggplot(tsv_oct1_ukb_df[tsv_oct1_ukb_df$discovery05 != 0,], aes(x=effect, y=beta_cholesterol)) + geom_point() + theme_bw() + geom_smooth(method = "lm")
+
+```
+
+
+## Masked synonymous results (emprical FDR)
+```{r}
+source("../../src/plot_func.R")
+source("../../src/methods/diagnostics.R")
+datasets <- c("oct1_rescaled_masked")
+# datasets <- c("oct1_rescaled_masked")
+# get sig cutoff df from yaml + param setting
+
+for (dataset in datasets) {
+  fit_df <- readRDS(paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset, "/baseline_", dataset, "/fitted_df.RData"))
+  masked_FDR_df <- get_masked_FDR_df(fit_df)
+  masked_FDR_df <- rename_methods(masked_FDR_df)
+  make_masked_FDR_plots(masked_FDR_df, dataset, plot_dir)
+}
+
+
+```
+
+
+
+
+
+
+## Emprical power results
+```{r}
+# validated variants 
+# (W64R, V135I, R175H, and E284A) are low-expression
+
+tsv_oct1_rescaled[tsv_oct1_rescaled$position==64 & tsv_oct1_rescaled$mutation=="R",]$discovery05
+tsv_oct1_rescaled[tsv_oct1_rescaled$position==135 & tsv_oct1_rescaled$mutation=="I",]$discovery05
+tsv_oct1_rescaled[tsv_oct1_rescaled$position==175 & tsv_oct1_rescaled$mutation=="H",]$discovery05
+tsv_oct1_rescaled[tsv_oct1_rescaled$position==284 & tsv_oct1_rescaled$mutation=="A",]$discovery05
+
+pos_vec <- c(135, 175, 284)
+mut_vec <- c("I", "H", "A")
+disc_count_mat <- c()
+for (i in 1:length(pos_vec)) {
+  pos <- pos_vec[i]
+  mut <- mut_vec[i]
+  mut_df <- tsv_oct1_rescaled[tsv_oct1_rescaled$position==pos & tsv_oct1_rescaled$mutation==mut,]
+  disc_count_mat <- rbind(disc_count_mat, c(pos, mut, mut_df$effect_disc, mut_df$weight_mean_disc, mut_df$orig_disc))
+}
+
+# (D149N, D149R, Q241N, D303G, C350I, M368T, E386K, R486W, R488E) should be WT-like
+tsv_oct1_rescaled[tsv_oct1_rescaled$position==149 & tsv_oct1_rescaled$mutation=="N",]$discovery05
+tsv_oct1_rescaled[tsv_oct1_rescaled$position==149 & tsv_oct1_rescaled$mutation=="R",]$discovery05
+tsv_oct1_rescaled[tsv_oct1_rescaled$position==241 & tsv_oct1_rescaled$mutation=="N",]$discovery05
+tsv_oct1_rescaled[tsv_oct1_rescaled$position==303 & tsv_oct1_rescaled$mutation=="G",]$discovery05
+tsv_oct1_rescaled[tsv_oct1_rescaled$position==350 & tsv_oct1_rescaled$mutation=="I",]$discovery05
+tsv_oct1_rescaled[tsv_oct1_rescaled$position==368 & tsv_oct1_rescaled$mutation=="T",]$discovery05
+tsv_oct1_rescaled[tsv_oct1_rescaled$position==386 & tsv_oct1_rescaled$mutation=="K",]$discovery05
+tsv_oct1_rescaled[tsv_oct1_rescaled$position==486 & tsv_oct1_rescaled$mutation=="W",]$discovery05
+tsv_oct1_rescaled[tsv_oct1_rescaled$position==488 & tsv_oct1_rescaled$mutation=="E",]$discovery05
+
+
+pos_vec <- c(149, 149, 241, 303, 350, 368, 386, 486, 488)
+mut_vec <- c("N", "R", "N", "G", "I", "T", "K", "W", "E")
+disc_count_mat <- c()
+for (i in 1:length(pos_vec)) {
+  pos <- pos_vec[i]
+  mut <- mut_vec[i]
+  mut_df <- tsv_oct1_rescaled[tsv_oct1_rescaled$position==pos & tsv_oct1_rescaled$mutation==mut,]
+  disc_count_mat <- rbind(disc_count_mat, c(pos, mut, mut_df$effect_disc, mut_df$weight_mean_disc, mut_df$orig_disc))
+}
+
+
+# alphamissense pathogenic label
+source("../../src/plot_func.R")
+source("../../src/methods/diagnostics.R")
+fit_df <- readRDS(paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset, "/baseline_", dataset, "/fitted_df.RData"))
+fit_df <- merge(fit_df, alphamis_df, by="hgvs", all.x=T)
+am_FNR_df <- get_am_FNR_df(fit_df, threshold="label")
+am_FNR_df <- rename_methods(am_FNR_df)
+make_am_FNR_plots(am_FNR_df, paste0(dataset, "_label"), "oct1_main")
+am_FNR_df <- get_am_FNR_df(fit_df, threshold="10percentile")
+am_FNR_df <- rename_methods(am_FNR_df)
+make_am_FNR_plots(am_FNR_df, paste0(dataset, "_10percentile"), "oct1_main")
+
+# alphamissense top 10 percentile
+tsv_oct1_rescaled
+
+
+# make box plots
+
+
+
+
+
+```
+
+
+
+```{r}
+# ranked discovery plots by method
+
+
+```
+
+
+

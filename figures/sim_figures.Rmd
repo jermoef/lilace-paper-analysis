@@ -1,0 +1,628 @@
+---
+title: "All Figures"
+author: "Jerome Freudenberg"
+date: "2024-11-26"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+```
+
+# Main figures
+```{r}
+source("../../src/methods/diagnostics.R")
+source("../../src/plot_func.R")
+yaml <- yaml::read_yaml("../../config/sim_hoffman.yaml")
+res_dir <- "../../hoffman_output/sim_res/sim"
+plot_dir <- "sim_figures/100pos"
+# plot_dir <- "sim_figures/other_models"
+sim_model_stats <- get_sim_model_stats(yaml, res_dir)
+
+
+FDR_df_raw <- get_FDR_df(yaml, res_dir)
+FDR_df_raw <- unique(FDR_df_raw)
+FDR_df <- rename_methods(FDR_df_raw)
+FDR_df <- rename_params(FDR_df)
+# cross-parameter plots + default plot
+FDR_df <- FDR_df[FDR_df$method != "mean bin\nnorm approx" &
+                 FDR_df$method != "ML\nnorm approx" & 
+                 FDR_df$method != "FACS_double_sample_nopos_mu_mean" &
+                 FDR_df$method != "FACS_double_sample_repq_mu_mean" &
+                 FDR_df$method != "FACS_double_sample_syn_shrinkage_mu_mean",]
+
+# FDR_df <- FDR_df[FDR_df$method != "mean bin\nnorm approx" &
+#                  FDR_df$method != "ML\nnorm approx" & 
+#                  FDR_df$method != "FACS_double_sample_nopos_syn_recalibrated_mu_mean" &
+#                  FDR_df$method != "FACS_double_sample_repq_mu_mean" &
+#                  FDR_df$method != "FACS_double_sample_syn_shrinkage_mu_mean",]
+
+FDR_df <- FDR_df[!(FDR_df$param == "Gate Offset" & FDR_df$param_val == 2),]
+make_FDR_plots(yaml, FDR_df[FDR_df$method != "Lilace\n(unrecalibrated)",], paste0(plot_dir, "/FDR"))
+make_FDR_plots(yaml, FDR_df, paste0(plot_dir, "/FDR+unrecalibrated"), axis_text_size=14)
+# make_FDR_plots(yaml, FDR_df[FDR_df$method != "Lilace\n(unrecalibrated)",], paste0(plot_dir, "/FDR"), axis_text_size=10, filter_methods=F)
+# make_FDR_plots(yaml, FDR_df, paste0(plot_dir, "/FDR+unrecalibrated"), axis_text_size=10, filter_methods=F)
+
+FDR_df_full <- rename_methods(FDR_df_raw)
+FDR_df_full <- rename_params(FDR_df_full)
+source("../../src/plot_func.R")
+make_FDR_plots(yaml, FDR_df_full, paste0(plot_dir, "/FDR+all"), axis_text_size=11)
+
+cor_df_raw <- get_cor_df(yaml, res_dir)
+cor_df <- rename_methods(cor_df_raw)
+cor_df <- rename_params(cor_df)
+source("../../src/plot_func.R")
+make_cor_plots(yaml, cor_df_raw, paste0(plot_dir, "/corr"))
+
+# fit_df <- readRDS("../../hoffman_output/sim_res/sim/sim_results/sim_oct1_rescaled_200pos_none_0_0_rescaled/baseline_sim_oct1_rescaled_200pos_none_0_0_rescaled/fitted_df.RData")
+# # fit_df <- readRDS("../../hoffman_output/sim_res/sim/sim_results/sim_Kir21_surface_abundance_rescaled_200pos_gate_offset_3_2_rescaled/baseline_sim_Kir21_surface_abundance_rescaled_200pos_gate_offset_3_2_rescaled/fitted_df.RData")
+# 
+# model <- "FACS_double_sample"
+# effect_cols <- c(paste0(model, "_mu_mean"), paste0(model, "_syn_recalibrated_mu_mean"), "enrich_score", "weight_effect_mean", "shep_effect_mean", "ML_effect_mean")
+# sd_cols <- c(NA, NA, "enrich_SE", "weight_effect_se", "shep_effect_se", "ML_effect_se")
+# c_thresh <- 0.95
+# fit_df_called <- label_significant(fit_df,
+#                                   effect_cols,
+#                                   sd_cols,
+#                                   c_thresh)
+# sim_obj_name <- paste0("sim_obj_", "oct1_rescaled", "_", 200, "pos", "_", "none", "_", 0, "_", 0)
+# sim_obj <- readRDS(paste0(res_dir, "/param_data/", sim_obj_name, ".RData"))
+# effect_df <- cbind(expand.grid(position = 1:ncol(sim_obj$effect_mat), mutation = 1:nrow(sim_obj$effect_mat)), effect=unlist(c(t(sim_obj$effect_mat))))
+# effect_df_merged <- merge(fit_df_called, effect_df)
+# effect_df_merged <- effect_df_merged %>% group_by(hgvs) %>% filter(row_number() == 1)
+# 
+# rank_cutoff <- 1000
+# # method <- "FACS_double_sample_syn_recalibrated_mu_mean"
+# method <- "ML_effect_mean_syn_sd"
+# # rank_df <- effect_df_merged[effect_df_merged[[paste0(method, "_rank")]] < rank_cutoff,]
+# # # disco_df <- rank_df[rank_df[[paste0(method, "_disc")]],]
+# # # discoveries is everything less than rank
+# # disco_df <- rank_df
+# # FDR <- sum(disco_df$effect==0) / nrow(disco_df)
+# # # FNR--# of nonzero effect nondiscoveries / # of nonzero effect
+# # FNR <- 1 - sum(abs(rank_df$effect) > effect_cutoff) / sum(abs(effect_df_merged$effect) > effect_cutoff)
+# 
+# 
+# disco_df <- effect_df_merged[!is.na(effect_df_merged[[paste0(method, "_disc")]]) & effect_df_merged[[paste0(method, "_disc")]],]
+# FDR <- sum(disco_df$effect==0) / nrow(disco_df)
+# # FNR--# of nonzero effect nondiscoveries / # of nonzero effect
+# nonzero_effect_df <- effect_df_merged[abs(effect_df_merged$effect) > effect_cutoff,]
+# FNR <- sum(nonzero_effect_df[[paste0(method, "_isnull")]]) / nrow(nonzero_effect_df)
+# # FPR--# of zero effect discoveries / # of zero effects
+# FPR <- sum(disco_df$effect==0) / sum(effect_df_merged$effect==0)
+# # compute sim metrics
+# 
+# # Rank-based default comparison
+# param <- "none"
+# param_val <- "0"
+# rank_FDR_df <- get_rank_FDR_df(yaml, res_dir, param, param_val)
+# rank_FDR_df <- rename_methods(rank_FDR_df)
+# rank_FDR_df <- rank_FDR_df[rank_FDR_df$method != "ML_effect_mean" & rank_FDR_df$method != "weighted average", ]
+# make_rank_FDR_plots(yaml, rank_FDR_df, plot_dir)
+
+# sig-based default comparison
+param <- "none"
+param_val <- "0"
+sig_FDR_df <- get_sig_FDR_df(yaml, res_dir, param, param_val)
+sig_FDR_df <- rename_methods(sig_FDR_df)
+sig_FDR_df_filtered <- sig_FDR_df[sig_FDR_df$method != "Lilace\n(unrecalibrated)" &
+                                  sig_FDR_df$method != "mean bin" &
+                                  sig_FDR_df$method != "ML_effect_mean",]
+source("../../src/plot_func.R")
+make_cross_sig_plots(yaml, sig_FDR_df_filtered, plot_dir)
+
+# large effect FNR plots
+effect_quantile <- 0.5
+FDR_df_quantile <- get_FDR_df(yaml, res_dir, effect_quantile=effect_quantile)
+
+for (dataset in unique(FDR_df_quantile$dataset)) {
+  FDR_df_summary_quantile <- FDR_df_quantile[FDR_df_quantile$dataset == dataset & FDR_df_quantile$param=="none",]
+  FDR_df_summary_quantile <- FDR_df_summary_quantile %>% group_by(param_val, method) %>% summarize(mean_FDR = mean(FDR), mean_sens = mean(1-FNR), mean_FPR = mean(FPR),
+                                                                                  sd_FDR = sd(FDR), sd_sens = sd(1-FNR), sd_FPR = sd(FPR))
+  FDR_df_summary_quantile <- rename_methods(FDR_df_summary_quantile)
+  FDR_df_summary_quantile <- FDR_df_summary_quantile[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|enrich2", FDR_df_summary_quantile$method),]
+  FDR_df_summary_quantile$sample_ord <- factor(FDR_df_summary_quantile$method, levels = c("Lilace", "Lilace\n(unrecalibrated)", "ML\n2sd", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+  
+  print(FDR_df_summary_quantile)
+  p_FNR <- ggplot(FDR_df_summary_quantile, aes(x=sample_ord, y=mean_sens)) + 
+               geom_pointrange(aes(ymin = mean_sens - sd_sens, ymax = mean_sens + sd_sens), color="orange") +
+                # geom_boxplot(width = 0.5, position = position_dodge(0.6), fill="orange") + 
+                expand_limits(y=0) + 
+                theme_cowplot() + xlab("method") + ylab("Sensitivity")
+  print(p_FNR)
+  if (!dir.exists(paste0("sim_figures/FDR_effect_", effect_quantile))) {
+    dir.create(paste0("sim_figures/FDR_effect_", effect_quantile))
+  }
+  ggsave(paste0("sim_figures/FDR_effect_", effect_quantile, "/sens_", dataset,".png"), p_FNR, height=3, width=6)
+}
+
+# p_FNR <- ggplot(default_FDR_df_quantile, aes(x=sample_ord, y=FNR)) + 
+#         geom_boxplot(width = 0.5, position = position_dodge(0.6), fill="orange") + 
+#         theme_bw() + ggtitle("FNR") + xlab("method") + guides(fill=guide_legend(title="Default Simulation")) +
+#         theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+
+
+```
+
+# Figure 4: Empirical FDR metrics
+```{r}
+# masked synonymous empirical FDR
+source("../../src/plot_func.R")
+source("../../src/methods/diagnostics.R")
+datasets <- c("oct1_rescaled_masked", "kir21_Surface_abundance_rescaled_masked", "gpcr_ph55_rescaled_masked", "kir21_Abundance_rescaled_masked")
+# get sig cutoff df from yaml + param setting
+for (dataset in datasets) {
+  fit_df <- readRDS(paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset, "/baseline_", dataset, "/fitted_df.RData"))
+  masked_FDR_df <- get_masked_FDR_df(fit_df)
+  masked_FDR_df <- rename_methods(masked_FDR_df)
+  make_masked_FDR_plots(masked_FDR_df, dataset, plot_dir)
+}
+
+
+```
+
+## Masked synonymous box plots
+```{r}
+source("../../src/plot_func.R")
+source("../../src/methods/diagnostics.R")
+# make 95% masked FDR box plots
+# datasets <- c("oct1_rescaled_masked", "Kir21_surface_abundance_rescaled_masked")
+datasets <- c("oct1_rescaled_masked", "Kir21_surface_abundance_rescaled_masked", "gpcr_ph55_rescaled_masked", "Kir21_Abundance_rescaled_masked", "pten_dropNA_masked", "tpmt_dropNA_masked", "p2ry8_surf_rescaled_masked")
+model <- "FACS_double_sample_repq"
+total_df <- c()
+for (dataset in datasets) {
+  protein <- str_extract(dataset, "[^_]+")
+  for (effect_prop in c(0.2)) {
+    FDR_FNR_df <- c()
+    for (iter in 0:9) {
+      dataset_iter <- paste0(dataset, "_", effect_prop, "_", iter)
+      fit_df <- readRDS(paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset_iter, "/baseline_", dataset_iter, "/fitted_df.RData"))
+      # get sim obj
+      # get fit df
+      effect_cols <- c(paste0(model, "_mu_mean"), paste0(model, "_syn_recalibrated_mu_mean"), "enrich_score", "weight_effect_mean", "shep_effect_mean", "ML_effect_mean")
+      sd_cols <- c(NA, NA, "enrich_SE", "weight_effect_se", "shep_effect_se", "ML_effect_se")
+      sig_cutoff <- 0.95
+      
+      fit_df_called <- label_significant(fit_df, 
+                                      effect_cols,
+                                      sd_cols, 
+                                      sig_cutoff)
+      # filter to one obs per variant to get FDR on variant scale
+      fit_df_called <- fit_df_called %>% group_by(hgvs) %>% filter(row_number() == 1)
+      for (method in effect_cols) {
+        rank_df <- fit_df_called
+        
+        disco_df <- rank_df[!is.na(rank_df[[paste0(method, "_disc")]]) & rank_df[[paste0(method, "_disc")]],]
+        # FDR <- sum(disco_df$type=="masked_synonymous") / nrow(disco_df)
+        N_syn_called <- sum(disco_df$type=="masked_synonymous") / sum(rank_df$type=="masked_synonymous")
+        # compute sim metrics
+        model_FDR <- data.frame(method, N_syn_called, sig_cutoff, iter)
+        FDR_FNR_df <- rbind(FDR_FNR_df, model_FDR)
+        # add sd effects
+        if (paste0(method, "_syn_sd_disc") %in% colnames(rank_df)) {
+          method <- paste0(method, "_syn_sd")
+          disco_df <- rank_df[!is.na(rank_df[[paste0(method, "_disc")]]) & rank_df[[paste0(method, "_disc")]],]
+          # FDR <- sum(disco_df$type=="masked_synonymous")  / nrow(disco_df)
+          N_syn_called <- sum(disco_df$type=="masked_synonymous") / sum(rank_df$type=="masked_synonymous")
+          model_FDR <- data.frame(method, N_syn_called, sig_cutoff, iter)
+          FDR_FNR_df <- rbind(FDR_FNR_df, model_FDR)
+        }
+      }
+    }
+    FDR_FNR_df <- rename_methods(FDR_FNR_df)
+    print(ggplot(FDR_FNR_df, aes(x=method, y=N_syn_called)) + geom_point() + theme_cowplot() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + ggtitle(paste(dataset, effect_prop)))
+    print(ggplot(FDR_FNR_df, aes(x=method, y=N_syn_called)) + geom_boxplot(width = 0.5, position = position_dodge(0.6), fill="orange") + theme_cowplot() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + ggtitle(paste(dataset, effect_prop)))
+    
+    FDR_FNR_plot_df <- FDR_FNR_df %>% group_by(method) %>% summarize(prop_syn_called=mean(N_syn_called), sd_prop_syn_called=sd(N_syn_called))
+    FDR_FNR_plot_df <- FDR_FNR_plot_df[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|enrich2", FDR_FNR_plot_df$method),]
+    FDR_FNR_plot_df$sample_ord <- factor(FDR_FNR_plot_df$method, levels = c("Lilace", "Lilace\n(unrecalibrated)", "ML\n2sd", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+    FDR_FNR_plot_df <- FDR_FNR_plot_df[FDR_FNR_plot_df$method!="Lilace\n(unrecalibrated)",]
+    total_df <- rbind(total_df, cbind(dataset, protein, FDR_FNR_plot_df))
+    p <- ggplot(FDR_FNR_plot_df, aes(x=sample_ord, y=prop_syn_called)) + 
+              geom_pointrange(aes(ymin = prop_syn_called - sd_prop_syn_called, ymax = prop_syn_called + sd_prop_syn_called), color="orange") +
+              expand_limits(y=0) + 
+              theme_cowplot() + xlab("method") + ylab("Prop Synonymous Called") + scale_color_tableau()
+    print(p)
+    ggsave(paste0("empirical_figures/masked_syn_box_plots/", dataset, "_", effect_prop, ".png"), p, height=3, width=6)
+  }
+}
+
+total_df[total_df$dataset=="oct1_rescaled_masked",]$dataset <- "OCT1"
+total_df[total_df$dataset=="Kir21_surface_abundance_rescaled_masked",]$dataset <- "Kir2.1 Surface"
+total_df[total_df$dataset=="gpcr_ph55_rescaled_masked",]$dataset <- "GPR68"
+total_df[total_df$dataset=="Kir21_Abundance_rescaled_masked",]$dataset <- "Kir2.1 Abundance"
+total_df[total_df$dataset=="pten_dropNA_masked",]$dataset <- "PTEN"
+total_df[total_df$dataset=="tpmt_dropNA_masked",]$dataset <- "TPMT"
+total_df[total_df$dataset=="p2ry8_surf_rescaled_masked",]$dataset <- "P2RY8"
+summary_total_df <- total_df %>% group_by(sample_ord) %>% summarize(sd_prop_syn_called=sd(prop_syn_called), prop_syn_called=mean(prop_syn_called), )
+summary_total_df$dataset <- "Average across datasets"
+summary_total_df$protein <- "Average across datasets"
+summary_total_df$method <- as.character(summary_total_df$sample_ord)
+summary_total_df <- summary_total_df %>% select("dataset", "protein", "method", "prop_syn_called", "sd_prop_syn_called", "sample_ord")
+full_total_df <- rbind(total_df, summary_total_df)
+
+p <- ggplot(full_total_df, aes(x=sample_ord, y=prop_syn_called, color=dataset)) + 
+          geom_pointrange(aes(ymin = prop_syn_called - sd_prop_syn_called, ymax = prop_syn_called + sd_prop_syn_called), position = position_dodge(0.4)) +
+          expand_limits(y=0) + 
+          scale_color_manual(values=c("#505050", "#E69F00", "#0072B2", "#D55E00", "#009E73", "#CC79A7", "#56B4E9", "#F0E442")) +
+          theme_cowplot() + xlab("method") + ylab("Prop Synonymous Called")
+print(p)
+ggsave(paste0("empirical_figures/syn_box_w_summary.png"), p, height=4, width=12)
+
+p <- ggplot(total_df %>% group_by(sample_ord) %>% summarize(mean_prop_syn_called=mean(prop_syn_called), sd_prop_syn_called=sd(prop_syn_called)),
+       aes(x=sample_ord, y=mean_prop_syn_called)) + geom_pointrange(aes(ymin = mean_prop_syn_called - sd_prop_syn_called, ymax = mean_prop_syn_called + sd_prop_syn_called), position = position_dodge(0.4), color="orange") +
+          expand_limits(y=0) + 
+          scale_color_manual(values=c("#505050", "#E69F00", "#0072B2", "#D55E00", "#009E73", "#CC79A7", "#56B4E9", "#F0E442")) +
+          theme_cowplot() + xlab("method") + ylab("Prop Synonymous Called")
+ggsave(paste0("empirical_figures/syn_box_summarized.png"), p, height=4, width=12)
+
+```
+
+
+```{r}
+source("../../src/plot_func.R")
+source("../../src/methods/diagnostics.R")
+# AlphaMissense ROC curves
+datasets <- c("oct1_rescaled", "Kir21_surface_abundance_rescaled", "gpcr_ph55_rescaled", "Kir21_Abundance_rescaled", "pten_dropNA", "tpmt_dropNA", "p2ry8_surf_rescaled")
+# datasets <- c("oct1_rescaled", "Kir21_surface_abundance_rescaled", "gpcr_ph55_rescaled", "Kir21_Abundance_rescaled", "pten_dropNA", "tpmt_dropNA")
+box_FDR_df <- c()
+corrs <- c()
+for (dataset in datasets) {
+  protein <- str_extract(dataset, "[^_]+")
+  am_df <- read_tsv(paste0("../../datasets/alpha_missense/", protein, ".tsv"))
+  colnames(am_df)[c(7,8,9,10,11)] <- c("wildtype", "position", "mutation", "am_score", "am_class")
+  am_df <- am_df[am_df$am_class == "likely_benign" | am_df$am_class == "likely_pathogenic",]
+  if (protein == "pten" || protein == "tpmt") {
+    am_df$hgvs <- paste0(am_df$wildtype, am_df$position, am_df$mutation)
+  } else {
+    am_df$hgvs <- paste0("p.(", am_df$wildtype, am_df$position, am_df$mutation, ")")
+  }
+  am_df <- am_df %>% select(hgvs, wildtype, position, mutation, am_score, am_class)
+  print(table(am_df$am_class))
+  # merge w/ fit df
+  fit_df <- readRDS(paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset, "/baseline_", dataset, "/fitted_df.RData"))
+  if (dataset == "tpmt_dropNA" || dataset == "pten_dropNA") {
+    methods_df <- readRDS(paste0("../../workflow/results/data/", dataset, "/methods_df.RData"))
+    methods_df$rep_list <- NULL
+    fit_df <- rows_patch(fit_df, methods_df, by=c("hgvs", "rep"), unmatched="ignore")
+  }
+  
+  # make box plots at 95%
+  am_box_df <- make_am_box_df(fit_df, am_df)
+  merged <- merge(fit_df, am_df)
+  print(sum(is.na(merged$enrich_score))/length(merged$enrich_score))
+  print(paste0("Enrich corr", cor(merged$enrich_score, merged$am_score, use="complete.obs")))
+  corrs <- rbind(corrs, c(dataset, "enrich", round(cor(merged$enrich_score, merged$am_score, use="complete.obs"), 3)))
+  print(paste0("Model corr", cor(merged$FACS_double_sample_repq_syn_recalibrated_mu_mean, merged$am_score)))
+  corrs <- rbind(corrs, c(dataset, "lilace", round(cor(merged$FACS_double_sample_repq_syn_recalibrated_mu_mean, merged$am_score, use="complete.obs"), 3)))
+  print(paste0("Weight corr", cor(merged$weight_effect_mean, merged$am_score)))
+  corrs <- rbind(corrs, c(dataset, "mean", round(cor(merged$weight_effect_mean, merged$am_score, use="complete.obs"), 3)))
+  corrs <- rbind(corrs, c(dataset, "ML", round(cor(merged$ML_effect_mean, merged$am_score, use="complete.obs"), 3)))
+  
+  box_FDR_df <- rbind(box_FDR_df, cbind(dataset, protein, am_box_df))
+  
+  # make FP TP df
+  am_curve_df <- make_am_curve_df(fit_df, am_df, "FACS_double_sample_repq")
+  # print(head(am_curve_df))
+  # print(nrow(fit_df_called_am))
+  # print(nrow(am_curve_df))
+
+  am_curve_df_filt <- rename_methods(am_curve_df)
+  am_curve_df_filt2 <- am_curve_df_filt[am_curve_df_filt$method!="Lilace\n(unrecalibrated)" &
+                                          am_curve_df_filt$method!="mean bin" &
+                                          am_curve_df_filt$method!="ML_effect_mean",]
+  p <- ggplot(am_curve_df_filt2, aes(x=FPR, y=TPR, color=method)) + geom_line() + theme_cowplot() + panel_border()
+  # print(p)
+  ggsave(paste0("empirical_figures/am_roc/", dataset, ".png"), p)
+}
+print(as.data.frame(corrs) %>% pivot_wider(names_from=c(V2), values_from=c(V3)))
+
+box_FDR_df_filt <- rename_methods(box_FDR_df)
+box_FDR_df_filt <- box_FDR_df_filt[box_FDR_df_filt$dataset!="p2ry8_surf_rescaled",]
+box_FDR_df_plot <- box_FDR_df_filt %>% group_by(method) %>% 
+    summarize(mean_FDR = mean(FDR), mean_sens = mean(sens),
+              sd_FDR = sd(FDR), sd_sens = sd(sens))
+# ggplot(box_FDR_df_filt, aes(x=method, y=sens, color=method, label=protein)) + geom_text() + theme_cowplot() + panel_border()
+
+box_FDR_df_plot <- box_FDR_df_plot[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|enrich2", box_FDR_df_plot$method),]
+box_FDR_df_plot$sample_ord <- factor(box_FDR_df_plot$method, levels = c("Lilace", "Lilace\n(unrecalibrated)", "ML\n2sd", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+
+p_FDR <- ggplot(box_FDR_df_plot, aes(x=sample_ord, y=mean_FDR)) + 
+              geom_pointrange(aes(ymin = mean_FDR - sd_FDR, ymax = mean_FDR + sd_FDR), color="orange") +
+              expand_limits(y=0) + 
+              theme_cowplot() + xlab("method") + ylab("FDR")
+p_FNR <- ggplot(box_FDR_df_plot, aes(x=sample_ord, y=mean_sens)) + 
+             geom_pointrange(aes(ymin = mean_sens - sd_sens, ymax = mean_sens + sd_sens), color="orange") +
+              expand_limits(y=0) + 
+              theme_cowplot() + xlab("method") + ylab("Sensitivity")
+
+p <- p_FDR + p_FNR + plot_layout(ncol=2, guides = "collect") & theme(text = element_text(size = 14), axis.text = element_text(size = 12))
+print(p)
+ggsave(paste0("empirical_figures/am_box+unrecalibrated.png"), p, height=3, width=12)
+
+box_FDR_df_plot_minus <- box_FDR_df_plot[box_FDR_df_plot$method != "Lilace\n(unrecalibrated)",]
+
+p_FDR <- ggplot(box_FDR_df_plot_minus, aes(x=sample_ord, y=mean_FDR)) + 
+              geom_pointrange(aes(ymin = mean_FDR - sd_FDR, ymax = mean_FDR + sd_FDR), color="orange") +
+              expand_limits(y=0) + 
+              theme_cowplot() + xlab("method") + ylab("FDR")
+p_FNR <- ggplot(box_FDR_df_plot_minus, aes(x=sample_ord, y=mean_sens)) + 
+             geom_pointrange(aes(ymin = mean_sens - sd_sens, ymax = mean_sens + sd_sens), color="orange") +
+              expand_limits(y=0) + 
+              theme_cowplot() + xlab("method") + ylab("Sensitivity")
+
+p <- p_FDR + p_FNR + plot_layout(ncol=2, guides = "collect") & theme(text = element_text(size = 14), axis.text = element_text(size = 12))
+print(p)
+ggsave(paste0("empirical_figures/am_box.png"), p, height=3, width=12)
+
+# am p2ry8
+box_FDR_df_filt <- rename_methods(box_FDR_df)
+box_FDR_df_filt <- box_FDR_df_filt[box_FDR_df_filt$dataset=="p2ry8_surf_rescaled",]
+box_FDR_df_plot <- box_FDR_df_filt %>% group_by(method) %>% 
+    summarize(mean_FDR = mean(FDR), mean_sens = mean(sens),
+              sd_FDR = sd(FDR), sd_sens = sd(sens))
+# ggplot(box_FDR_df_filt, aes(x=method, y=sens, color=method, label=protein)) + geom_text() + theme_cowplot() + panel_border()
+
+box_FDR_df_plot <- box_FDR_df_plot[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|enrich2", box_FDR_df_plot$method),]
+box_FDR_df_plot$sample_ord <- factor(box_FDR_df_plot$method, levels = c("Lilace", "Lilace\n(unrecalibrated)", "ML\n2sd", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+
+p_FDR <- ggplot(box_FDR_df_plot, aes(x=sample_ord, y=mean_FDR)) + 
+              geom_point(color="orange") +
+              expand_limits(y=0) + 
+              theme_cowplot() + xlab("method") + ylab("FDR")
+p_FNR <- ggplot(box_FDR_df_plot, aes(x=sample_ord, y=mean_sens)) + 
+             geom_point(color="orange") +
+              expand_limits(y=0) + 
+              theme_cowplot() + xlab("method") + ylab("Sensitivity")
+
+p <- p_FDR + p_FNR + plot_layout(ncol=2, guides = "collect") & theme(text = element_text(size = 14), axis.text = element_text(size = 12))
+ggsave(paste0("empirical_figures/am_box_p2ry8.png"), p, height=3, width=12)
+
+```
+
+## clinvar empirical plots
+```{r}
+library(Biostrings)
+source("../../src/plot_func.R")
+source("../../src/methods/diagnostics.R")
+# AlphaMissense ROC curves
+datasets <- c("oct1_rescaled", "Kir21_surface_abundance_rescaled", "gpcr_ph55_rescaled", "Kir21_Abundance_rescaled", "pten_dropNA", "tpmt_dropNA")
+gene_names <- c("SLC22A1", "KCNJ2", "GPR68", "KCNJ2", "PTEN", "TPMT")
+# datasets <- c("oct1_rescaled", "Kir21_surface_abundance_rescaled", "gpcr_ph55_rescaled", "Kir21_Abundance_rescaled", "pten_dropNA", "tpmt_dropNA")
+box_FDR_df <- c()
+clinvar_counts <- c()
+for (i in 1:length(datasets)) {
+  dataset <- datasets[i]
+  protein <- str_extract(dataset, "[^_]+")
+  gene_name <- gene_names[i]
+  clinvar_df <- read_tsv(paste0("../../datasets/clinvar/", protein, ".txt"))
+  clinvar_df <- clinvar_df[clinvar_df$`Gene(s)` == gene_name,]
+  # extract hgvs from name
+  clinvar_df <- separate(clinvar_df, Name, into = c("prefix", "hgvs"), sep = " (?=[^ ]+$)")
+  clinvar_df <- clinvar_df[!is.na(clinvar_df$hgvs),]
+  clinvar_df <- clinvar_df %>% extract(hgvs, into=c("wildtype", "position", "mutation"), "^\\(p.(\\D+)(\\d+)([\\D_\\d]+)\\)$", remove=F)
+  # convert wildtype and mutation to single letter notation
+  conv_AA <- setNames(names(AMINO_ACID_CODE), AMINO_ACID_CODE)
+  clinvar_df$wildtype <- conv_AA[clinvar_df$wildtype]
+  clinvar_df$mutation <- conv_AA[clinvar_df$mutation]
+  
+  if (protein == "pten" || protein == "tpmt") {
+    clinvar_df$hgvs <- paste0(clinvar_df$wildtype, clinvar_df$position, clinvar_df$mutation)
+  } else {
+    clinvar_df$hgvs <- paste0("p.(", clinvar_df$wildtype, clinvar_df$position, clinvar_df$mutation, ")")
+  }
+  clinvar_df$class <- clinvar_df$`Germline classification`
+  clinvar_df <- clinvar_df %>% select(hgvs, wildtype, position, mutation, class)
+  clinvar_df <- clinvar_df[clinvar_df$class != "Conflicting classifications of pathogenicity" & 
+                             clinvar_df$class != "Uncertain significance" & 
+                             clinvar_df$class != "not provided" & 
+                             clinvar_df$class != "drug response",]
+  clinvar_df$class[grep("pathogenic|Pathogenic", clinvar_df$class)] <- "pathogenic"
+  clinvar_df$class[grep("benign|Benign", clinvar_df$class)] <- "benign"
+  print(protein)
+  clinvar_counts <- rbind(clinvar_counts, c(protein, table(factor(clinvar_df$class, levels=c("benign", "pathogenic")))))
+  
+  # make box plots at 95%
+  fit_df <- readRDS(paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset, "/baseline_", dataset, "/fitted_df.RData"))
+  clinvar_box_df <- make_clinvar_box_df(fit_df, clinvar_df)
+  box_FDR_df <- rbind(box_FDR_df, cbind(dataset, protein, clinvar_box_df))
+}
+box_FDR_df_filt <- box_FDR_df[box_FDR_df$protein == "Kir21" | box_FDR_df$protein == "pten",]
+box_FDR_df_filt <- rename_methods(box_FDR_df_filt)
+
+box_FDR_df_plot <- box_FDR_df_filt %>% group_by(method) %>% 
+    summarize(mean_FDR = mean(FDR), mean_sens = mean(sens),
+              sd_FDR = sd(FDR), sd_sens = sd(sens))
+# ggplot(box_FDR_df_filt, aes(x=method, y=sens, color=method, label=protein)) + geom_text() + theme_cowplot() + panel_border()
+
+box_FDR_df_filt <- box_FDR_df_filt[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|enrich2", box_FDR_df_filt$method),]
+box_FDR_df_filt$sample_ord <- factor(box_FDR_df_filt$method, levels = c("Lilace", "Lilace\n(unrecalibrated)", "ML\n2sd", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+box_FDR_df_filt[box_FDR_df_filt$dataset=="Kir21_Abundance_rescaled",]$dataset <- "Kir2.1 Abundance" 
+box_FDR_df_filt[box_FDR_df_filt$dataset=="Kir21_surface_abundance_rescaled",]$dataset <- "Kir2.1 Surface Expression" 
+box_FDR_df_filt[box_FDR_df_filt$dataset=="pten_dropNA",]$dataset <- "PTEN" 
+box_FDR_df_filt <- box_FDR_df_filt[box_FDR_df_filt$method != "Lilace\n(unrecalibrated)",]
+
+p_FNR <- ggplot(box_FDR_df_filt, aes(x=sample_ord, y=sens, color=dataset)) + 
+             geom_point() +
+              expand_limits(y=0) + 
+              theme_cowplot() + xlab("method") + ylab("Sensitivity") + scale_color_tableau()
+ggsave("empirical_figures/clinvar_sens.png", p_FNR, height=4, width=8)
+
+```
+
+
+
+## nonsense empirical FNR plots
+```{r}
+source("../../src/plot_func.R")
+source("../../src/methods/diagnostics.R")
+# nonsense mutation plot
+datasets <- c("pten_dropNA", "tpmt_dropNA")
+total_FNR_df <- c()
+for (dataset in datasets) {
+  fit_df <- readRDS(paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset, "/baseline_", dataset, "/fitted_df.RData"))
+  nonsense_FNR_df <- get_nonsense_FNR_df(fit_df)
+  total_FNR_df <- rbind(total_FNR_df, cbind(dataset, nonsense_FNR_df))
+}
+
+total_FNR_df <- rename_methods(total_FNR_df)
+total_FNR_df <- total_FNR_df[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|enrich2", total_FNR_df$method),]
+total_FNR_df$sample_ord <- factor(total_FNR_df$method, levels = c("Lilace", "Lilace\n(unrecalibrated)", "ML\n2sd", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+
+total_FNR_df[total_FNR_df$dataset=="pten_dropNA",]$dataset <- "PTEN"
+total_FNR_df[total_FNR_df$dataset=="tpmt_dropNA",]$dataset <- "TPMT"
+# total_FNR_df[total_FNR_df$dataset=="p2ry8_surf_rescaled",]$dataset <- "P2RY8"
+
+
+p <- ggplot(total_FNR_df, aes(x=sample_ord, y=sens, color=dataset)) + 
+          geom_point() +
+          expand_limits(y=0) + 
+          theme_cowplot() + xlab("method") + ylab("Prop Nonsense Called")
+print(p)
+# ggsave(paste0("empirical_figures/nonsense_box.png"), p, height=4, width=8)
+
+
+```
+
+## replicate correlation
+```{r}
+datasets <- c("oct1_rescaled", "Kir21_surface_abundance_rescaled", "gpcr_ph55_rescaled", "Kir21_Abundance_rescaled", "pten_dropNA", "tpmt_dropNA", "p2ry8_surf_rescaled")
+
+corr_df <- c()
+for (dataset in datasets) {
+  fit_df <- readRDS(paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset, "/baseline_", dataset, "/fitted_df.RData"))
+  for (model in c("FACS_double_sample_syn_recalibrated_mu_mean",
+                  "FACS_double_sample_repq_syn_recalibrated_mu_mean")) {
+    rep_pairs <- combn(unique(fit_df$rep), 2)
+    corrs <- c()
+    for (i in 1:ncol(rep_pairs)) {
+      rep_pair <- rep_pairs[,i]
+      
+      rep1_df <- readRDS(paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset, "_rep", rep_pair[1], "/baseline_", dataset, "_rep", rep_pair[1], "/fitted_df.RData"))
+      rep2_df <- readRDS(paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset, "_rep", rep_pair[2], "/baseline_", dataset, "_rep", rep_pair[2], "/fitted_df.RData"))
+      join_rep_df <- merge(rep1_df, rep2_df, by="hgvs")
+      corrs <- c(corrs, cor(join_rep_df[[paste0(model, ".x")]], join_rep_df[[paste0(model, ".y")]]))
+    }
+    corr_df <- rbind(corr_df, c(dataset, model, mean(corrs), sd(corrs)))
+  }
+}
+```
+
+
+
+## Replicate q comparison
+```{r}
+datasets <- c("gpcr_ph55", "p2ry8_surf")
+# datasets <- "p2ry8_surf"
+# compare GPR68 and P2RY8 
+for (dataset in datasets) {
+  if (dataset == "gpcr_ph55") {
+    plot_title <- "GPR68"
+  } else {
+    plot_title <- "P2RY8"
+  }
+  # mean and lfsr unnormalized vs normalized on single q model
+  unnormalized_singleq_scores <-  read_tsv(paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset, "/baseline_", dataset, "/FACS_double_sample_plots/variant_scores.tsv"))
+  normalized_singleq_scores <- read_tsv(paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset, "_rescaled/baseline_", dataset, "_rescaled/FACS_double_sample_plots/variant_scores.tsv"))
+  joint_singleq_fit <- merge(unnormalized_singleq_scores, normalized_singleq_scores, by=c("hgvs"))
+  p <- ggplot(joint_singleq_fit, aes(x=effect.x, y=effect.y)) + 
+    geom_point() + geom_abline(intercept=0,slope=1,color="red", lwd=2) + 
+    xlab("Single baseline effect size") + ylab("Normalized single baseline effect size") +
+    theme(text = element_text(size = 20), axis.text = element_text(size = 15)) +
+    theme_cowplot() + ggtitle(plot_title)
+  print(p)
+  ggsave(paste0("data_figures/", dataset, "_singleq_effect_comp.png"), p, height=5, width=8)
+  p <- ggplot(joint_singleq_fit, aes(x=lfsr.x, y=lfsr.y)) + 
+    geom_point() + geom_abline(intercept=0,slope=1,color="red", lwd=2) + 
+    xlab("Single baseline lfsr") + ylab("Normalized single baseline lfsr") +
+    theme(text = element_text(size = 20), axis.text = element_text(size = 15)) +
+    theme_cowplot() + ggtitle(plot_title)
+  print(p)
+  ggsave(paste0("data_figures/", dataset, "_singleq_lfsr_comp.png"), p, height=5, width=8)
+  
+  # mean and lfsr unnormalized vs normalized on repq q model
+  unnormalized_repq_scores <-  read_tsv(paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset, "/baseline_", dataset, "/FACS_double_sample_repq_plots/variant_scores.tsv"))
+  normalized_repq_scores <- read_tsv(paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset, "_rescaled/baseline_", dataset, "_rescaled/FACS_double_sample_repq_plots/variant_scores.tsv"))
+  joint_repq_fit <- merge(unnormalized_repq_scores, normalized_repq_scores, by=c("hgvs"))
+  p <- ggplot(joint_repq_fit, aes(x=effect.x, y=effect.y)) + 
+    geom_point() + geom_abline(intercept=0,slope=1,color="red", lwd=2) + 
+    xlab("Replicate-specific baseline effect size") + ylab("Normalized replicate-specific baseline effect size") +
+    theme(text = element_text(size = 20), axis.text = element_text(size = 15)) +
+    theme_cowplot() + ggtitle(plot_title)
+  print(p)
+  ggsave(paste0("data_figures/", dataset, "_repqq_effect_comp.png"), p, height=5, width=8)
+  p <- ggplot(joint_repq_fit, aes(x=lfsr.x, y=lfsr.y)) + 
+    geom_point() + geom_abline(intercept=0,slope=1,color="red", lwd=2) + 
+    xlab("Replicate-specific baseline lfsr") + ylab("Normalized replicate-specific baseline lfsr") +
+    theme(text = element_text(size = 20), axis.text = element_text(size = 15)) +
+    theme_cowplot() + ggtitle(plot_title)
+  print(p)
+  ggsave(paste0("data_figures/", dataset, "_repqq_lfsr_comp.png"), p, height=5, width=8)
+  
+}
+
+
+```
+
+
+## runtime stats
+```{r}
+datasets <- c("oct1_rescaled", "Kir21_surface_abundance_rescaled", "gpcr_ph55_rescaled", "Kir21_Abundance_rescaled", "pten_dropNA", "tpmt_dropNA", "p2ry8_surf_rescaled")
+
+model_stats_df <- c()
+for (dataset in datasets) {
+  for (model in c("FACS_double_sample_nopos", "FACS_double_sample", "FACS_double_sample_repq")) {
+    model_yaml <- paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset, "/baseline_", dataset, "/", model, "_plots/model_stats.yaml")
+    fit_df <- readRDS(paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset, "/baseline_", dataset, "/fitted_df.RData"))
+    n_positions <- length(unique(fit_df$position))
+    model_stats <- yaml::read_yaml(model_yaml)
+    model_stats_df <- rbind(model_stats_df, c(dataset=dataset, model=model, n_pos=n_positions,
+                                              n_divergent=sum(model_stats$num_divergent), 
+                                              n_max_tree=sum(model_stats$n_max_tree),
+                                              mean_ebfmi=mean(model_stats$ebfmi),
+                                              runtime=model_stats$runtime))
+  }
+}
+model_stats_df <- as.data.frame(model_stats_df)
+model_stats_df$n_pos <- as.numeric(model_stats_df$n_pos)
+model_stats_df$runtime <- gsubfn::gsubfn("([0-9.]+)", ~format(round(as.numeric(x), 2), nsmall=2), model_stats_df$runtime)
+```
+
+```{r}
+plot_model_stats_df <- model_stats_df
+plot_model_stats_df[plot_model_stats_df$dataset=="p2ry8_surf_rescaled" & plot_model_stats_df$model == "FACS_double_sample",]$runtime <- "31.44 hours"
+plot_model_stats_df[plot_model_stats_df$dataset=="p2ry8_surf_rescaled" & plot_model_stats_df$model == "FACS_double_sample_repq",]$runtime <- "48 hours"
+plot_model_stats_df$runtime_numeric <- as.numeric(gsub(" hours", "", plot_model_stats_df$runtime))
+
+plot_model_stats_df[plot_model_stats_df$dataset=="oct1_rescaled",]$dataset <- "OCT1"
+plot_model_stats_df[plot_model_stats_df$dataset=="Kir21_surface_abundance_rescaled",]$dataset <- "Kir2.1 Surf"
+plot_model_stats_df[plot_model_stats_df$dataset=="gpcr_ph55_rescaled",]$dataset <- "GPR68"
+plot_model_stats_df[plot_model_stats_df$dataset=="Kir21_Abundance_rescaled",]$dataset <- "Kir2.1 Abun"
+plot_model_stats_df[plot_model_stats_df$dataset=="pten_dropNA",]$dataset <- "PTEN"
+plot_model_stats_df[plot_model_stats_df$dataset=="tpmt_dropNA",]$dataset <- "TPMT"
+plot_model_stats_df[plot_model_stats_df$dataset=="p2ry8_surf_rescaled",]$dataset <- "P2RY8"
+plot_model_stats_df[plot_model_stats_df$model=="FACS_double_sample_repq",]$model <- "Lilace"
+plot_model_stats_df[plot_model_stats_df$model=="FACS_double_sample_nopos",]$model <- "Lilace (no pos/rep_q)"
+plot_model_stats_df$dataset <- as.factor(plot_model_stats_df$dataset)
+```
+
+```{r}
+plot_model_stats_df <- plot_model_stats_df[plot_model_stats_df$model == "Lilace" | plot_model_stats_df$model == "Lilace (no pos/rep_q)",]
+p <- ggplot(plot_model_stats_df, aes(x=dataset, y=runtime_numeric, col=model)) + 
+  geom_point(size=2) +
+  scale_shape_manual(values=1:nlevels(plot_model_stats_df$dataset)) +
+  ylab("Runtime (hours)") +
+  xlab("Dataset") + 
+  theme(text = element_text(size = 20), axis.text = element_text(size = axis_text_size)) +
+  theme_cowplot() +
+  scale_color_manual(values=c("#E69F00", "#0072B2", "#CC79A7", "#009E73", "#D55E00", "#56B4E9", "#F0E442", "#505050"))
+
+ggsave(paste0("data_figures/runtime.png"), p, height=4, width=10)
+
+```
+
+
+
+

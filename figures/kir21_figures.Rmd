@@ -1,0 +1,681 @@
+---
+title: "sims_figures.Rmd"
+author: "Jerome Freudenberg"
+date: "2024-11-26"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## Read in Kir21 results
+```{r}
+pheno <- "Abundance"
+# pheno <- "surface_abundance"
+
+file <- paste0("/Users/jerome/DocuLocal/DMS/sim-DMS-FACS/hoffman_output/data_baselines_inc_fixed_phi/data/Kir21_", pheno, "_rescaled/baseline_Kir21_", pheno, "_rescaled/FACS_double_sample_repq_plots/variant_scores.tsv")
+stopifnot(file.info(file)$ctime > as.Date("2024-01-20"))
+tsv_kir21 <- read_tsv(file)
+
+tsv_kir21 <- distinct(tsv_kir21)
+tsv_kir21 <- tsv_kir21[order(tsv_kir21$mutation, tsv_kir21$position),]
+tsv_kir21$discovery05 <- as.numeric(tsv_kir21$lfsr < 0.05) * sign(tsv_kir21$effect)
+tsv_kir21$discovery10 <- as.numeric(tsv_kir21$lfsr < 0.10) * sign(tsv_kir21$effect)
+tsv_kir21$effect_disc <- tsv_kir21$lfsr < 0.05
+```
+## 3d count plot
+```{r}
+source("../../src/plot_func.R")
+# make 3d count plot
+kir21_rescaled_fit_df_surf <- readRDS(paste0("/Users/jerome/DocuLocal/DMS/sim-DMS-FACS/hoffman_output/data_baselines_inc_fixed_phi/data/Kir21_", "surface_abundance", "_rescaled/baseline_Kir21_", "surface_abundance", "_rescaled/fitted_df.RData"))
+
+getwd()
+make_3d_plot(kir21_rescaled_fit_df_surf, "data_figures/kir21/counts_plot_surf")
+
+kir21_rescaled_fit_df_abun <- readRDS(paste0("/Users/jerome/DocuLocal/DMS/sim-DMS-FACS/hoffman_output/data_baselines_inc_fixed_phi/data/Kir21_", "Abundance", "_rescaled/baseline_Kir21_", "Abundance", "_rescaled/fitted_df.RData"))
+
+getwd()
+make_3d_plot(kir21_rescaled_fit_df_abun, "data_figures/kir21/counts_plot_abun")
+
+
+```
+
+## Add other methods
+```{r}
+
+source("../../src/methods/diagnostics.R")
+kir21_rescaled_fit_df <- readRDS(paste0("/Users/jerome/DocuLocal/DMS/sim-DMS-FACS/hoffman_output/data_baselines_inc_fixed_phi/data/Kir21_", pheno, "_rescaled/baseline_Kir21_", pheno, "_rescaled/fitted_df.RData"))
+stopifnot("FACS_double_sample_repq_mu_mean" %in% colnames(kir21_rescaled_fit_df))
+
+# label discoveries
+effect_cols <- c("enrich_score", "weight_effect_mean", "ML_effect_mean")
+sd_cols <- c(NA,"enrich_SE", "weight_effect_se", "ML_effect_se")
+c_thresh <- 0.95
+kir21_rescaled_fit_df_called <- label_significant(kir21_rescaled_fit_df, effect_cols, sd_cols, 0.95)
+
+kir21_method_df <- distinct(kir21_rescaled_fit_df_called[c("hgvs", 
+                                                         "enrich_score", "enrich_pval_adjusted", "enrich_score_disc", "enrich_score_syn_sd_disc",
+                                                         "weight_effect_mean", "weight_effect_mean_syn_sd_disc", "weight_effect_se")])
+colnames(kir21_method_df) <- c("hgvs", "enrich", "enrich_pval", "enrich_pval_disc", "enrich_syn_sd_disc", "weight_mean", "weight_mean_disc", "weight_mean_se")
+tsv_kir21 <- merge(tsv_kir21, kir21_method_df)
+
+
+
+```
+
+
+## Plot results
+```{r}
+getwd()
+# scoreHeatmap(tsv_kir21, "data_figures/kir21", score.col="discovery05", name=paste0("kir21_", pheno, "_discovery05_heatmap"), x.text=2.5, seq.text=0.75, y.text=2, npos=222, ht=2.7)
+# scoreHeatmap(tsv_kir21, "data_figures/kir21", score.col="enrich", name=paste0("kir21_", pheno, "_enrich_score_heatmap"), x.text=2.5, seq.text=0.75, y.text=2)
+# scoreHeatmap(tsv_kir21, "data_figures/kir21", score.col="weight_mean", name=paste0("kir21_", pheno, "_weight_effect_heatmap"), x.text=2.5, seq.text=0.75, y.text=2)
+
+# scatter plot vs enrich2
+tsv_kir21$enrich_disc <- tsv_kir21$enrich_pval_disc
+model_enrich_scatter <- plot_method_scatter(tsv_kir21, "effect", "enrich", "Lilace", "Enrich2", F)
+print(model_enrich_scatter)
+model_enrich_scatter <- plot_method_scatter(tsv_kir21, "effect", "enrich", "Lilace", "Enrich2", T)
+print(model_enrich_scatter)
+
+tsv_kir21$enrich_disc <- tsv_kir21$enrich_syn_sd_disc
+model_enrich_scatter <- plot_method_scatter(tsv_kir21, "effect", "enrich", "Lilace", "Enrich2", F)
+print(model_enrich_scatter)
+model_enrich_scatter <- plot_method_scatter(tsv_kir21, "effect", "enrich", "Lilace", "Enrich2", T)
+print(model_enrich_scatter)
+
+model_weight_scatter <- plot_method_scatter(tsv_kir21, "effect", "weight_mean", "Lilace", "weighted bin", F)
+print(model_weight_scatter)
+
+model_weight_scatter <- plot_method_scatter(tsv_kir21, "effect", "weight_mean", "Lilace", "weighted bin", T)
+print(model_weight_scatter)
+
+
+```
+
+
+## GOF/LOF position plot 
+```{r}
+comp_method <- "weight_mean_disc"
+comp_score <- "weight_mean"
+comp_name <- "Mean bin"
+# comp_method <- "enrich_pval_disc"
+# comp_score <- "enrich"
+# comp_name <- "Enrich2"
+
+tsv_kir21$discovery_cat <- ifelse(!is.na(tsv_kir21[[comp_method]]) & 
+                                            tsv_kir21$discovery05 != 0 & 
+                                            tsv_kir21[[comp_method]], "both",
+                                          ifelse(tsv_kir21$discovery05 != 0, "Lilace", 
+                                                 ifelse(!is.na(tsv_kir21[[comp_method]]) & tsv_kir21[[comp_method]], "enrich_pval", "neither")))
+# scoreHeatmap(tsv_kir21, "plots/figures/kir21_supp", score.col="discovery_cat", name=paste0("kir21_", pheno, "_discovery_cat_heatmap_", comp_method), x.text=2.5, seq.text=0.75, y.text=2, compare_score=T)
+# make plot where agree + separate lines for the additional discoveries
+
+# overlay 2sd and new plot pos sums
+
+# make top position plot (GOF)
+# tsv_kir21$gof_effect_both <- ifelse((tsv_kir21$discovery05 == 1 & tsv_kir21[[comp_method]]) & 
+#                                               tsv_kir21$effect > 0, 
+#                                               tsv_kir21$effect, 0)
+# tsv_kir21 <- tsv_kir21 %>% group_by(position) %>% mutate(pos_sum_both_gof=sum(abs(gof_effect_both)))
+# 
+# tsv_kir21$gof_effect_2sd <- ifelse((tsv_kir21[[comp_method]]) &
+#                                                 tsv_kir21$weight_mean > 0, 
+#                                               tsv_kir21$effect, 0)
+# tsv_kir21 <- tsv_kir21 %>% group_by(position) %>% mutate(pos_sum_2sd_gof=sum(abs(gof_effect_2sd)))
+# 
+# tsv_kir21$gof_effect_model <- ifelse((tsv_kir21$discovery05 == 1) &
+#                                                 tsv_kir21$effect > 0, 
+#                                               tsv_kir21$effect, 0)
+# tsv_kir21 <- tsv_kir21 %>% group_by(position) %>% mutate(pos_sum_model_gof=sum(abs(gof_effect_model)))
+# 
+# p_gof <- ggplot(tsv_kir21, aes(x=position)) + 
+#   geom_line(aes(y=pos_sum_both_gof, col="both"), alpha=0.5) +  
+#   geom_line(aes(y=pos_sum_2sd_gof, col="2sd"), alpha=0.5) +  
+#   geom_line(aes(y=pos_sum_model_gof, col="model"), alpha=0.5) +
+#   scale_color_manual(name = "Discovery set", values = c("both" = "black", "model" = "cyan", "2sd" = "darkorange")) +
+#   theme_cowplot() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20)) + ylab("GOF effect by position") + 
+#   theme(axis.title.x = element_blank(), axis.text.x = element_blank()) +
+#   theme(plot.margin = unit(c(0,0,0,0), "cm"))
+# ggsave(paste0("data_figures/kir21/", pheno, "_pos_scores_gof_", comp_method, ".png"), p_gof, width=20)
+# 
+# 
+# # make bottom position plot (LOF)
+# tsv_kir21$lof_effect_both <- ifelse((tsv_kir21$discovery05 == -1 & tsv_kir21[[comp_method]]) &
+#                                                 tsv_kir21$effect < 0, 
+#                                               tsv_kir21$effect, 0)
+# tsv_kir21 <- tsv_kir21 %>% group_by(position) %>% mutate(pos_sum_both_lof=sum(abs(lof_effect_both)))
+# 
+# tsv_kir21$lof_effect_2sd <- ifelse((tsv_kir21[[comp_method]]) &
+#                                                 tsv_kir21$weight_mean < 0, 
+#                                               tsv_kir21$effect, 0)
+# tsv_kir21 <- tsv_kir21 %>% group_by(position) %>% mutate(pos_sum_2sd_lof=sum(abs(lof_effect_2sd)))
+# 
+# tsv_kir21$lof_effect_model <- ifelse((tsv_kir21$discovery05 == -1) &
+#                                                 tsv_kir21$effect < 0, 
+#                                               tsv_kir21$effect, 0)
+# tsv_kir21 <- tsv_kir21 %>% group_by(position) %>% mutate(pos_sum_model_lof=sum(abs(lof_effect_model)))
+# 
+# p_lof <- ggplot(tsv_kir21, aes(x=position)) + 
+#   geom_line(aes(y=pos_sum_both_lof, col="both"), alpha=0.5) +  
+#   geom_line(aes(y=pos_sum_2sd_lof, col="2sd"), alpha=0.5) +  
+#   geom_line(aes(y=pos_sum_model_lof, col="model"), alpha=0.5) +
+#   scale_y_reverse() +
+#   scale_color_manual(name = "Discovery set", values = c("both" = "black", "model" = "cyan", "2sd" = "darkorange")) +
+#   theme_cowplot() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20), position="top")+ ylab("LOF effect by position") +
+#   theme(plot.margin = unit(c(0,0,0,0), "cm"))
+# ggsave(paste0("data_figures/kir21/", pheno, "_pos_scores_lof_", comp_method, ".png"), p_lof, width=20)
+# 
+# # combine plots
+# p_full <- p_gof / p_lof + plot_layout(axis_titles = "collect", guides = "collect")
+# ggsave(paste0("data_figures/kir21/", pheno, "_pos_scores_", comp_method, ".png"), p_full, width=20)
+
+
+# only model
+
+
+# make same plot using only signifance and not effect size
+# overlay 2sd and new plot pos sums
+tsv_kir21$gof_effect_both <- ifelse((tsv_kir21$discovery05 == 1 & tsv_kir21[[comp_method]]) &
+                                                tsv_kir21$effect > 0, 
+                                              1, 0)
+tsv_kir21 <- tsv_kir21 %>% group_by(position) %>% mutate(pos_sum_both_gof=sum(abs(gof_effect_both)))
+
+tsv_kir21$gof_effect_2sd <- ifelse((tsv_kir21[[comp_method]]) &
+                                                tsv_kir21[[comp_score]] > 0, 
+                                              1, 0)
+tsv_kir21 <- tsv_kir21 %>% group_by(position) %>% mutate(pos_sum_2sd_gof=sum(abs(gof_effect_2sd)))
+
+tsv_kir21$gof_effect_model <- ifelse((tsv_kir21$discovery05 == 1) &
+                                                tsv_kir21$effect > 0, 
+                                              1, 0)
+tsv_kir21 <- tsv_kir21 %>% group_by(position) %>% mutate(pos_sum_model_gof=sum(abs(gof_effect_model)))
+
+set_lwd <- 1
+
+scale_color <- c("black", "cyan", "orange")
+names(scale_color) <- c("both", "Lilace", comp_name)
+
+p_gof <- ggplot(tsv_kir21, aes(x=position)) + 
+  geom_line(aes(y=pos_sum_both_gof, col="both"), alpha=0.5, lwd=set_lwd) +  
+  geom_line(aes(y=pos_sum_2sd_gof, col=comp_name), alpha=0.5, lwd=set_lwd) +  
+  geom_line(aes(y=pos_sum_model_gof, col="Lilace"), alpha=0.5, lwd=set_lwd) +
+  scale_color_manual(name = "Discovery set", values = scale_color) +
+  theme_cowplot() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20)) + ylab("# called GOF by position") + 
+  theme(axis.title.x = element_blank(), axis.text.x = element_blank()) +
+  theme(plot.margin = unit(c(0,0,0,0), "cm"), text = element_text(size = 20), axis.text = element_text(size = 20))
+ggsave(paste0("data_figures/kir21/", pheno, "_pos_sig_gof_", comp_method, ".png"), p_gof, width=20)
+
+
+# make bottom position plot (LOF)
+tsv_kir21$lof_effect_both <- ifelse((tsv_kir21$discovery05 == -1 & tsv_kir21[[comp_method]]) &
+                                                tsv_kir21$effect < 0, 
+                                              1, 0)
+tsv_kir21 <- tsv_kir21 %>% group_by(position) %>% mutate(pos_sum_both_lof=sum(abs(lof_effect_both)))
+
+tsv_kir21$lof_effect_2sd <- ifelse((tsv_kir21[[comp_method]]) &
+                                                tsv_kir21[[comp_score]] < 0, 
+                                              1, 0)
+tsv_kir21 <- tsv_kir21 %>% group_by(position) %>% mutate(pos_sum_2sd_lof=sum(abs(lof_effect_2sd)))
+
+tsv_kir21$lof_effect_model <- ifelse((tsv_kir21$discovery05 == -1) &
+                                                tsv_kir21$effect < 0, 
+                                              1, 0)
+tsv_kir21 <- tsv_kir21 %>% group_by(position) %>% mutate(pos_sum_model_lof=sum(abs(lof_effect_model)))
+
+p_lof <- ggplot(tsv_kir21, aes(x=position)) + 
+  geom_line(aes(y=pos_sum_both_lof, col="both"), alpha=0.5, lwd=set_lwd) +  
+  geom_line(aes(y=pos_sum_2sd_lof, col=comp_name), alpha=0.5, lwd=set_lwd) +  
+  geom_line(aes(y=pos_sum_model_lof, col="Lilace"), alpha=0.5, lwd=set_lwd) +
+  scale_y_reverse() +
+  scale_color_manual(name = "Discovery set", values = scale_color) +
+  theme_cowplot() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20), position="top")+ ylab("# called LOF by position") +
+  theme(plot.margin = unit(c(0,0,0,0), "cm"), text = element_text(size = 20), axis.text = element_text(size = 20))
+ggsave(paste0("data_figures/kir21/", pheno, "_pos_sig_lof_", comp_method, ".png"), p_lof, width=20)
+
+# combine plots
+p_full <- p_gof / p_lof + plot_layout(axis_titles = "collect", guides = "collect")
+ggsave(paste0("data_figures/kir21/", pheno, "_pos_sig_", comp_method, ".png"), p_full, width=20)
+# make manhattan plot using lfsr
+
+
+```
+
+
+```{r}
+# weight mean SE by position
+
+avg_pos_df <- tsv_kir21 %>% group_by(position) %>% summarize(mean_pos_weight_se=mean(weight_mean_se, na.rm=T))
+p <- ggplot(avg_pos_df, aes(x=position,y=mean_pos_weight_se)) + geom_point() + geom_smooth(span=0.1) + theme_cowplot() + ylab("Mean s.e. of weighted mean bin score")
+print(p)
+ggsave(paste0("data_figures/kir21/pos_weight_se_", pheno, ".png"))
+
+
+
+```
+
+## Bin synonymous rank preservation
+```{r}
+library(ggpmisc)
+syn_rank_plot_df <- tsv_kir21
+# plot vs weighted mean to show synonymous ranks are consistent
+syn_rank_plot_df$enrich_rank <- rank(syn_rank_plot_df$enrich)
+syn_rank_plot_df$lilace_rank <- rank(syn_rank_plot_df$effect)
+syn_rank_plot_df$weight_rank <- rank(syn_rank_plot_df$weight_mean)
+
+syn_rank_plot_df <- syn_rank_plot_df[syn_rank_plot_df$type=="synonymous" | syn_rank_plot_df$type=="missense",]
+syn_rank_plot_df <- syn_rank_plot_df[order(syn_rank_plot_df$type),]
+
+
+corr <- round(cor(syn_rank_plot_df$weight_mean, syn_rank_plot_df$effect, method="spearman"), 2)
+ggplot(syn_rank_plot_df, aes(x=weight_rank, y=lilace_rank, color=type)) + geom_point() + stat_poly_line(color="blue")  + scale_color_manual(values = c("#f28e2b", "#59a14f")) + 
+  theme_cowplot() + xlab("mean bin score") + ylab("Lilace") +
+  annotate("text", -Inf, Inf, hjust = -0.5, vjust = 2, size=5, label=paste0("spearman=", corr))
+ggplot(syn_rank_plot_df, aes(x=weight_mean, y=effect, color=type)) + geom_point() + stat_poly_line(color="blue")  + scale_color_manual(values = c("#f28e2b", "#59a14f")) + 
+  theme_cowplot() + xlab("mean bin score") + ylab("Lilace") +
+  annotate("text", -Inf, Inf, hjust = -0.5, vjust = 2, size=5, label=paste0("spearman=", corr))
+
+corr <- round(cor(syn_rank_plot_df$enrich, syn_rank_plot_df$effect, method="spearman", use="complete.obs"), 2)
+ggplot(syn_rank_plot_df, aes(x=enrich_rank, y=lilace_rank, color=type)) + geom_point() + stat_poly_line(color="blue")  + scale_color_manual(values = c("#f28e2b", "#59a14f")) + 
+  theme_cowplot() + xlab("Enrich2 score") + ylab("Lilace") +
+  annotate("text", -Inf, Inf, hjust = -0.5, vjust = 2, size=5, label=paste0("spearman=", corr))
+ggplot(syn_rank_plot_df, aes(x=enrich, y=effect, color=type)) + geom_point() + stat_poly_line(color="blue")  + scale_color_manual(values = c("#f28e2b", "#59a14f")) + 
+  theme_cowplot() + xlab("Enrich2 score") + ylab("Lilace") +
+  annotate("text", -Inf, Inf, hjust = -0.5, vjust = 2, size=5, label=paste0("spearman=", corr))
+
+
+```
+
+
+
+## Kir2.1 analysis
+```{r}
+source("../../src/methods/diagnostics.R")
+source("../../src/plot_func.R")
+## Read in Kir21 resultsl
+
+tsv_kir21_all <- c()
+for (pheno in c("Abundance", "surface_abundance")) {
+  file <- paste0("/Users/jerome/DocuLocal/DMS/sim-DMS-FACS/hoffman_output/data_baselines_inc_fixed_phi/data/Kir21_", pheno, "_rescaled/baseline_Kir21_", pheno, "_rescaled/FACS_double_sample_repq_plots/variant_scores.tsv")
+  stopifnot(file.info(file)$ctime > as.Date("2024-01-20"))
+  tsv_kir21 <- read_tsv(file)
+  
+  tsv_kir21 <- distinct(tsv_kir21)
+  tsv_kir21 <- tsv_kir21[order(tsv_kir21$mutation, tsv_kir21$position),]
+  tsv_kir21$discovery05 <- as.numeric(tsv_kir21$lfsr < 0.05) * sign(tsv_kir21$effect)
+  tsv_kir21$discovery10 <- as.numeric(tsv_kir21$lfsr < 0.10) * sign(tsv_kir21$effect)
+  tsv_kir21$effect_disc <- tsv_kir21$lfsr < 0.05
+  
+  source("../../src/methods/diagnostics.R")
+  kir21_rescaled_fit_df <- readRDS(paste0("/Users/jerome/DocuLocal/DMS/sim-DMS-FACS/hoffman_output/data_baselines_inc_fixed_phi/data/kir21_", pheno, "_rescaled/baseline_Kir21_", pheno, "_rescaled/fitted_df.RData"))
+  stopifnot("FACS_double_sample_repq_mu_mean" %in% colnames(kir21_rescaled_fit_df))
+  
+  # label discoveries
+  effect_cols <- c("enrich_score", "weight_effect_mean", "ML_effect_mean")
+  sd_cols <- c(NA,"enrich_SE", "weight_effect_se", "ML_effect_se")
+  c_thresh <- 0.95
+  kir21_rescaled_fit_df_called <- label_significant(kir21_rescaled_fit_df, effect_cols, sd_cols, 0.95)
+  
+  kir21_method_df <- distinct(kir21_rescaled_fit_df_called[c("hgvs", 
+                                                           "enrich_score", "enrich_pval_adjusted", "enrich_score_disc", "enrich_score_syn_sd_disc",
+                                                           "weight_effect_mean", "weight_effect_mean_syn_sd_disc")])
+  colnames(kir21_method_df) <- c("hgvs", "enrich", "enrich_pval", "enrich_pval_disc", "enrich_syn_sd_disc", "weight_mean", "weight_mean_disc")
+  tsv_kir21 <- merge(tsv_kir21, kir21_method_df)
+  
+  # score and discovery heatmap
+  # scoreHeatmap(tsv_kir21, "data_figures/kir21", score.col="effect", name=paste0("kir21_", pheno, "_effect_heatmap"), x.text=2.5, seq.text=0.75, y.text=2, npos=222, ht=2.7)
+  # scoreHeatmap(tsv_kir21, "data_figures/kir21", score.col="discovery05", name=paste0("kir21_", pheno, "_discovery05_heatmap"), x.text=2.5, seq.text=0.75, y.text=2, npos=222, ht=2.7)
+  tsv_kir21$discovery <- ifelse(tsv_kir21$discovery05 == -1, "LOF", ifelse(tsv_kir21$discovery05 == 1, "GOF", "Not significant"))
+  scoreHeatmap(tsv_kir21, "data_figures/kir21", score.col="discovery", name=paste0("kir21_", pheno, "_discovery05_heatmap"), x.text=2.5, seq.text=0.75, y.text=2, discovery_score=T, npos=150, ht=5.5)
+  # scoreDensity(tsv_kir21, "data_figures/kir21", score.col="effect", name=paste0("kir21_", pheno, "_score_histogram"), hist=T, scale.free=T)
+  
+  # comparison plots
+  tsv_kir21$enrich_disc <- tsv_kir21$enrich_pval_disc
+  model_enrich_scatter <- plot_method_scatter(tsv_kir21, "effect", "enrich", "Lilace", "Enrich2", F, paste0("Enrich2 (p-val) vs Lilace ", pheno))
+  print(model_enrich_scatter)
+  ggsave(paste0("data_figures/kir21/", pheno, "_scatter_enrich_pval.png"), model_enrich_scatter, width=9, height=6)
+  model_enrich_scatter <- plot_method_scatter(tsv_kir21, "effect", "enrich", "Lilace", "Enrich2", T, paste0("Enrich2 (p-val) vs Lilace ", pheno))
+  print(model_enrich_scatter)
+  
+  tsv_kir21$enrich_disc <- tsv_kir21$enrich_syn_sd_disc
+  model_enrich_scatter <- plot_method_scatter(tsv_kir21, "effect", "enrich", "Lilace", "Enrich2", F, paste0("Enrich2 (2*syn sd) vs Lilace ", pheno))
+  print(model_enrich_scatter)
+  ggsave(paste0("data_figures/kir21/", pheno, "_scatter_enrich_2sd.png"), model_enrich_scatter, width=9, height=6)
+  model_enrich_scatter <- plot_method_scatter(tsv_kir21, "effect", "enrich", "Lilace", "Enrich2", T, paste0("Enrich2 (2*syn sd) vs Lilace ", pheno))
+  print(model_enrich_scatter)
+  
+  model_weight_scatter <- plot_method_scatter(tsv_kir21, "effect", "weight_mean", "Lilace", "Mean bin", F, paste0("Mean bin (2sd) vs Lilace ", pheno))
+  print(model_weight_scatter)
+  ggsave(paste0("data_figures/kir21/", pheno, "_weight_2sd.png"), model_weight_scatter, width=9, height=6)
+  model_weight_scatter <- plot_method_scatter(tsv_kir21, "effect", "weight_mean", "Lilace", "mean bin 2sd", T, paste0("Weighted mean bin vs Lilace ", pheno))
+  print(model_weight_scatter)
+  
+  tsv_kir21_all <- rbind(tsv_kir21_all, tsv_kir21)
+}
+
+tsv_kir21_all <- tsv_kir21_all %>% pivot_wider(id_cols=c("hgvs", "wildtype", "position", "mutation", "type"), names_from="exp", 
+                                               values_from=c("effect", "effect_se", "lfsr", "pos_effect", "pos_effect_se", "pos_sd", "pos_sd_se", 
+                                                             "discovery05", "discovery10", "effect_disc", "enrich", "enrich_pval", "enrich_pval_disc", 
+                                                             "enrich_syn_sd_disc", "weight_mean", "weight_mean_disc"))
+
+```
+
+
+
+
+```{r}
+# masked FDR
+source("../../src/plot_func.R")
+source("../../src/methods/diagnostics.R")
+datasets <- c("oct1_rescaled_masked", "Kir21_Abundance_rescaled_masked")
+# datasets <- c("oct1_rescaled_masked")
+# get sig cutoff df from yaml + param setting
+
+for (dataset in datasets) {
+  fit_df <- readRDS(paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset, "/baseline_", dataset, "/fitted_df.RData"))
+  masked_FDR_df <- get_masked_FDR_df(fit_df)
+  masked_FDR_df <- rename_methods(masked_FDR_df)
+  make_masked_FDR_plots(masked_FDR_df, dataset, plot_dir)
+  
+  ranked_masked_FDR_df <- get_ranked_masked_FDR_df(fit_df)
+  ranked_masked_FDR_df <- rename_methods(ranked_masked_FDR_df)
+  make_ranked_masked_FDR_plots(ranked_masked_FDR_df, dataset, plot_dir)
+}
+
+```
+
+```{r}
+# Kir2.1 clinvar FNR check
+clinvar_dat <- read_tsv("../../datasets/clinvar_result_kcnj2.txt")
+clinvar_dat <- clinvar_dat %>% select("Gene(s)", "Protein change", "Variant type", "Molecular consequence", "Germline classification")
+clinvar_dat <- clinvar_dat[!is.na(clinvar_dat$`Protein change`),]
+clinvar_dat$kcnj2_hgvs <- paste0("p.(", clinvar_dat$`Protein change`, ")")
+
+tsv_kir21_all$kcnj2_pos <- ifelse(tsv_kir21_all$position < 115, tsv_kir21_all$position, -1)
+tsv_kir21_all$kcnj2_pos <- ifelse(tsv_kir21_all$position > 123, tsv_kir21_all$position - 8, tsv_kir21_all$kcnj2_pos)
+tsv_kir21_all$kcnj2_hgvs <- paste0("p.(", tsv_kir21_all$wildtype, tsv_kir21_all$kcnj2_pos, tsv_kir21_all$mutation, ")")
+
+tsv_kir21_all <- merge(tsv_kir21_all, clinvar_dat, by="kcnj2_hgvs", all.x=T)
+
+source("../../src/plot_func.R")
+source("../../src/methods/diagnostics.R")
+datasets <- c("Kir21_surface_abundance_rescaled", "Kir21_Abundance_rescaled")
+for (dataset in datasets) {
+  fit_df <- readRDS(paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset, "/baseline_", dataset, "/fitted_df.RData"))
+  fit_df$position <- as.numeric(fit_df$position)
+  fit_df$kcnj2_pos <- ifelse(fit_df$position < 115, fit_df$position, -1)
+  fit_df$kcnj2_pos <- ifelse(fit_df$position > 123, fit_df$position - 8, fit_df$kcnj2_pos)
+  fit_df$kcnj2_hgvs <- paste0("p.(", fit_df$wildtype, fit_df$kcnj2_pos, fit_df$mutation, ")")
+  fit_df <- merge(fit_df, clinvar_dat, by="kcnj2_hgvs", all.x=T)
+  clinvar_FNR_df <- get_clinvar_FNR_df(fit_df)
+  clinvar_FNR_df <- rename_methods(clinvar_FNR_df)
+  make_clinvar_FNR_plots(clinvar_FNR_df, dataset, plot_dir)
+}
+
+
+# Kir2.1 AlphaMissense FNR check
+```
+
+```{r}
+# Discovery comparison scatter(+contour)plots to weight and enrich2
+
+
+# note % diff
+```
+
+```{r}
+# 
+
+
+```
+
+
+```{r}
+# multi phenotype comparison plots
+
+# make category for which phenotype affected 
+
+is_effect_cols <- tsv_kir21_all[,c("effect_disc_abundance", "effect_disc_surface_abundance")]
+names(is_effect_cols) <- c("abundance", "surface")
+tsv_kir21_all$effect_pheno_class <- apply(is_effect_cols, 1, function(x) {
+  if (any(is.na(x))) {
+    return(NA)
+  } else {
+    return(paste(names(is_effect_cols)[x], collapse = ", "))
+  }
+})
+is_effect_cols <- tsv_kir21_all[,c("enrich_pval_disc_abundance", "enrich_pval_disc_surface_abundance")]
+names(is_effect_cols) <- c("abundance", "surface")
+tsv_kir21_all$enrich_pval_pheno_class <- apply(is_effect_cols, 1, function(x) {
+  if (any(is.na(x))) {
+    return(NA)
+  } else {
+    return(paste(names(is_effect_cols)[x], collapse = ", "))
+  }
+})
+is_effect_cols <- tsv_kir21_all[,c("weight_mean_disc_abundance", "weight_mean_disc_surface_abundance")]
+names(is_effect_cols) <- c("abundance", "surface")
+tsv_kir21_all$weight_mean_pheno_class <- apply(is_effect_cols, 1, function(x) {
+  if (any(is.na(x))) {
+    return(NA)
+  } else {
+    return(paste(names(is_effect_cols)[x], collapse = ", "))
+  }
+})
+# add category counts
+
+# make scatter plot
+p1 <- ggplot(tsv_kir21_all %>% drop_na(), aes(effect_abundance, effect_surface_abundance, col=effect_pheno_class)) + geom_point(alpha=0.5) + theme_cowplot() +
+    theme(legend.position="bottom", text = element_text(size = 20), axis.text = element_text(size = 20)) + scale_color_tableau() + xlab("Abundance") + ylab("Surface Expression")
+# make contour plots
+p2 <- ggplot(tsv_kir21_all %>% drop_na(), aes(effect_abundance, effect_surface_abundance, col=effect_pheno_class))  + 
+  lapply(split(tsv_kir21_all, tsv_kir21_all$effect_pheno_class), function(x) stat_density_2d(data=x, alpha=0.8)) + theme_cowplot() +
+    theme(legend.position="bottom", text = element_text(size = 20), axis.text = element_text(size = 20)) + scale_color_tableau() + xlab("Abundance") + ylab("Surface Expression")
+
+p1
+p2
+p_full <- p1 / p2 + plot_layout(ncol=1, guides = "collect")
+p_full
+```
+
+```{r}
+# make heatmap
+source("../../src/plot_func.R")
+scoreHeatmap(tsv_kir21_all, "plots", score.col="effect_pheno_class", name=paste0("kir21_multipheno_effect_heatmap"), x.text=2.5, seq.text=0.75, y.text=2, category_score=T)
+
+
+# compare to other methods
+sum(tsv_kir21_all$effect_pheno_class != tsv_kir21_all$enrich_pval_pheno_class, na.rm=T) / nrow(tsv_kir21_all)
+sum(tsv_kir21_all$effect_pheno_class != tsv_kir21_all$weight_mean_pheno_class, na.rm=T) / nrow(tsv_kir21_all)
+
+# make col for same or diff
+tsv_kir21_all$effect_vs_enrich_pval_pheno_class <- tsv_kir21_all$effect_pheno_class == tsv_kir21_all$enrich_pval_pheno_class
+tsv_kir21_all$effect_vs_weight_mean_pheno_class <- tsv_kir21_all$effect_pheno_class == tsv_kir21_all$weight_mean_pheno_class
+
+
+ggplot(tsv_kir21_all[!is.na(tsv_kir21_all$effect_vs_enrich_pval_pheno_class),], 
+       aes(effect_abundance, effect_surface_abundance, col=effect_vs_enrich_pval_pheno_class)) + geom_point(alpha=0.5) + theme_cowplot() +
+    theme(legend.position="bottom", text = element_text(size = 20), axis.text = element_text(size = 20)) + scale_color_manual(values=c("TRUE" = "gray", "FALSE"="red"))
+
+
+tsv_kir21_all_plot <- tsv_kir21_all %>% arrange(desc(effect_vs_enrich_pval_pheno_class))
+ggplot(tsv_kir21_all[!is.na(tsv_kir21_all$effect_vs_enrich_pval_pheno_class),], 
+       aes(enrich_abundance, enrich_surface_abundance, col=effect_vs_enrich_pval_pheno_class)) + geom_point(alpha=0.5, size=2) + theme_cowplot() +
+    theme(legend.position="bottom", text = element_text(size = 20), axis.text = element_text(size = 20)) + scale_color_manual(values=c("TRUE" = "gray", "FALSE"="red")) + 
+    xlab("Enrich2 Abundance Score") + ylab("Enrich2 Surface Score") +
+    guides(color=guide_legend(title="Same Classification as Lilace"))
+ggsave("data_figures/kir21/enrich_pheno_comp.png", width=8, height=6)
+
+ggplot(tsv_kir21_all[!is.na(tsv_kir21_all$effect_vs_weight_mean_pheno_class),], 
+       aes(effect_abundance, effect_surface_abundance, col=effect_vs_weight_mean_pheno_class)) + geom_point(alpha=0.5) + theme_cowplot() +
+    theme(legend.position="bottom", text = element_text(size = 20), axis.text = element_text(size = 20)) + scale_color_manual(values=c("TRUE" = "gray", "FALSE"="red"))
+
+weight_syn_mean_abun <- mean(tsv_kir21_all_plot[tsv_kir21_all_plot$type=="synonymous",]$weight_mean_abundance, na.rm=T)
+weight_syn_sd_abun <- sd(tsv_kir21_all_plot[tsv_kir21_all_plot$type=="synonymous",]$weight_mean_abundance, na.rm=T)
+weight_syn_mean_surf <- mean(tsv_kir21_all_plot[tsv_kir21_all_plot$type=="synonymous",]$weight_mean_surface_abundance, na.rm=T)
+weight_syn_sd_surf <- sd(tsv_kir21_all_plot[tsv_kir21_all_plot$type=="synonymous",]$weight_mean_surface_abundance, na.rm=T)
+
+tsv_kir21_all_plot <- tsv_kir21_all %>% arrange(desc(effect_vs_weight_mean_pheno_class))
+ggplot(tsv_kir21_all_plot[!is.na(tsv_kir21_all_plot$effect_vs_weight_mean_pheno_class),], 
+       aes(weight_mean_abundance, weight_mean_surface_abundance, col=effect_vs_weight_mean_pheno_class)) + geom_point(alpha=0.5, size=2) + 
+    geom_hline(yintercept=weight_syn_mean_surf - 2*weight_syn_sd_surf, linetype='dashed', col = 'navy', lwd=0.5) +
+    geom_hline(yintercept=weight_syn_mean_surf + 2*weight_syn_sd_surf, linetype='dashed', col = 'navy', lwd=0.5) +
+    geom_vline(xintercept=weight_syn_mean_abun - 2*weight_syn_sd_abun, linetype='dashed', col = 'navy', lwd=0.5) +
+    geom_vline(xintercept=weight_syn_mean_abun + 2*weight_syn_sd_abun, linetype='dashed', col = 'navy', lwd=0.5) +
+    theme_cowplot() + theme(legend.position="bottom", text = element_text(size = 20), axis.text = element_text(size = 20)) + scale_color_manual(values=c("TRUE" = "gray", "FALSE"="red")) +
+    xlab("Weighted Mean Bin Abundance") + ylab("Weighted Mean Bin Surface") +
+    guides(color=guide_legend(title="Same Classification as Lilace")) + scale_y_continuous(breaks = c(-0.5, -0.2, 0, 0.2))
+ggsave("data_figures/kir21/weight_pheno_comp.png", width=8, height=6)
+
+# make plots for each method
+ggplot(tsv_kir21_all, aes(enrich_abundance, enrich_surface_abundance, col=enrich_pval_pheno_class)) + geom_point(alpha=0.5) + theme_bw() +
+    theme(legend.position="bottom") + scale_color_brewer(palette = "Set3")
+ggplot(tsv_kir21_all, aes(enrich_abundance, enrich_surface_abundance, col=enrich_pval_pheno_class))  + 
+  lapply(split(tsv_kir21_all, tsv_kir21_all$enrich_pval_pheno_class), function(x) stat_density_2d(data=x, alpha=0.8)) + theme_bw() +
+    theme(legend.position="bottom") + scale_color_brewer(palette = "Set3")
+scoreHeatmap(tsv_kir21_all, "plots", score.col="enrich_pval_pheno_class", name=paste0("kir21_multipheno_enrich_pval_heatmap"), x.text=2.5, seq.text=0.75, y.text=2, category_score=T)
+
+ggplot(tsv_kir21_all, aes(weight_mean_abundance, weight_mean_surface_abundance, col=weight_mean_pheno_class)) + geom_point(alpha=0.5) + theme_bw() +
+    theme(legend.position="bottom") + scale_color_brewer(palette = "Set3")
+ggplot(tsv_kir21_all, aes(weight_mean_abundance, weight_mean_surface_abundance, col=weight_mean_pheno_class))  + 
+  lapply(split(tsv_kir21_all, tsv_kir21_all$weight_mean_pheno_class), function(x) stat_density_2d(data=x, alpha=0.8)) + theme_bw() +
+    theme(legend.position="bottom") + scale_color_brewer(palette = "Set3")
+scoreHeatmap(tsv_kir21_all, "plots", score.col="weight_mean_pheno_class", name=paste0("kir21_multipheno_weight_mean_heatmap"), x.text=2.5, seq.text=0.75, y.text=2, category_score=T)
+
+
+
+tsv_kir21_all$effect_pheno_class %>% table
+bothp = 3299 / (908 + 3299 + 1042)
+abundance_only = 908 / (908 + 3299 + 1042)
+surface_only = 1042 / (908 + 3299 + 1042)
+print(paste(bothp, abundance_only, surface_only))
+# bothp = 3258 / (943 + 3258 + 1007)
+# abundance_only = 943 / (943 + 3258 + 1007)
+# surface_only = 1007 / (943 + 3258 + 1007)
+# print(paste(bothp, abundance_only, surface_only))
+
+tsv_kir21_all$enrich_pval_pheno_class %>% table
+bothp = 4317 / (2165 + 4317 + 2059)
+abundance_only = 2165 / (2165 + 4317 + 2059)
+surface_only = 2059 / (2165 + 4317 + 2059)
+print(paste(bothp, abundance_only, surface_only))
+# bothp = 4318 / (2165 + 4318 + 2059)
+# abundance_only = 2165 / (2165 + 4318 + 2059)
+# surface_only = 2059 / (2165 + 4318 + 2059)
+# print(paste(bothp, abundance_only, surface_only))
+
+tsv_kir21_all$weight_mean_pheno_class %>% table
+bothp = 3448 / (1468 + 3448 + 948)
+abundance_only = 1468 / (1468 + 3448 + 948)
+surface_only = 948 / (1468 + 3448 + 948)
+print(paste(bothp, abundance_only, surface_only))
+
+```
+
+
+```{r}
+# difference in classifications
+
+
+# make heatmap with classification difference for both enrich2 pval and weight bin
+# +LOF, -LOF, +GOF, -GOF
+for (pheno in c("abundance", "surface_abundance")) {
+  vs_col1 <- paste0("discovery_vs_enrich_", pheno)
+  vs_col2 <- paste0("undiscovery_vs_enrich_", pheno)
+  effect_col1 <- paste0("effect_", pheno)
+  effect_col2 <- paste0("enrich_", pheno)
+  disc_col1 <- paste0("effect_disc_", pheno)
+  disc_col2 <- paste0("enrich_pval_disc_", pheno)
+  out_col <- paste0("discovery_class_vs_enrich2_", pheno)
+  tsv_kir21_all[[vs_col1]] <- tsv_kir21_all[[disc_col1]] & !tsv_kir21_all[[disc_col2]]
+  tsv_kir21_all[[vs_col2]] <- !tsv_kir21_all[[disc_col1]] & tsv_kir21_all[[disc_col2]]
+  tsv_kir21_all[[out_col]] <- ifelse(tsv_kir21_all[[vs_col1]] & tsv_kir21_all[[effect_col1]] > 0, "+GOF",
+                              ifelse(tsv_kir21_all[[vs_col1]] & tsv_kir21_all[[effect_col1]] < 0, "+LOF",
+                              ifelse(tsv_kir21_all[[vs_col2]] & tsv_kir21_all[[effect_col2]] > 0, "-GOF",
+                              ifelse(tsv_kir21_all[[vs_col2]] & tsv_kir21_all[[effect_col2]] < 0, "-LOF",
+                              ifelse(tsv_kir21_all[[disc_col1]] & tsv_kir21_all[[disc_col2]] & tsv_kir21_all[[effect_col1]] > 0, "=GOF",   
+                                     "=LOF")))))
+  
+  vs_col1 <- paste0("discovery_vs_weight_mean_", pheno)
+  vs_col2 <- paste0("undiscovery_vs_weight_mean_", pheno)
+  effect_col1 <- paste0("effect_", pheno)
+  effect_col2 <- paste0("weight_mean_", pheno)
+  disc_col1 <- paste0("effect_disc_", pheno)
+  disc_col2 <- paste0("weight_mean_disc_", pheno)
+  out_col <- paste0("discovery_class_vs_weight_mean_", pheno)
+  tsv_kir21_all[[vs_col1]] <- tsv_kir21_all[[disc_col1]] & !tsv_kir21_all[[disc_col2]]
+  tsv_kir21_all[[vs_col2]] <- !tsv_kir21_all[[disc_col1]] & tsv_kir21_all[[disc_col2]]
+  tsv_kir21_all[[out_col]] <- ifelse(tsv_kir21_all[[vs_col1]] & tsv_kir21_all[[effect_col1]] > 0, "+GOF",
+                              ifelse(tsv_kir21_all[[vs_col1]] & tsv_kir21_all[[effect_col1]] < 0, "+LOF",
+                              ifelse(tsv_kir21_all[[vs_col2]] & tsv_kir21_all[[effect_col2]] > 0, "-GOF",
+                              ifelse(tsv_kir21_all[[vs_col2]] & tsv_kir21_all[[effect_col2]] < 0, "-LOF",
+                              ifelse(tsv_kir21_all[[disc_col1]] & tsv_kir21_all[[disc_col2]] & tsv_kir21_all[[effect_col1]] > 0, "=GOF",   
+                                     "=LOF")))))
+}
+
+source("../../src/plot_func.R")
+scoreHeatmap(tsv_kir21_all, "plots/figures/", score.col="discovery_class_vs_enrich2_abundance", name="kir21_abundance_enrich_discovery_cat_heatmap", x.text=2.5, seq.text=0.75, y.text=2, compare_score=T)
+scoreHeatmap(tsv_kir21_all, "plots/figures/", score.col="discovery_class_vs_enrich2_surface_abundance", name="kir21_surface_abundance_enrich_ discovery_cat_heatmap", x.text=2.5, seq.text=0.75, y.text=2, compare_score=T)
+scoreHeatmap(tsv_kir21_all, "plots/figures/", score.col="discovery_class_vs_enrich2_abundance", name="kir21_abundance_weight_mean_discovery_cat_heatmap", x.text=2.5, seq.text=0.75, y.text=2, compare_score=T)
+scoreHeatmap(tsv_kir21_all, "plots/figures/", score.col="discovery_class_vs_enrich2_surface_abundance", name="kir21_surface_abundance_weight_mean_discovery_cat_heatmap", x.text=2.5, seq.text=0.75, y.text=2, compare_score=T)
+
+
+
+
+
+```
+
+
+```{r}
+# find additional discoveries vs enrich2 p-val in either phenotype
+lilace_only_kir21_enrich <- (tsv_kir21_all$effect_disc_abundance & !tsv_kir21_all$enrich_pval_disc_abundance) | (tsv_kir21_all$effect_disc_surface_abundance & !tsv_kir21_all$enrich_pval_disc_surface_abundance)
+lilace_only_kir21_weight <- (tsv_kir21_all$effect_disc_abundance & !tsv_kir21_all$weight_mean_disc_abundance) | (tsv_kir21_all$effect_disc_surface_abundance & !tsv_kir21_all$weight_mean_disc_surface_abundance)
+
+
+table(lilace_only_kir21)
+
+# gof
+sum(tsv_kir21_all[lilace_only_kir21,]$effect_abundance > 0, na.rm=T)
+
+# lof
+sum(tsv_kir21_all[lilace_only_kir21,]$effect_abundance < 0, na.rm=T)
+
+# quantify LOF or GOF
+table(tsv_kir21_all$discovery_class_vs_enrich2_abundance)
+table(tsv_kir21_all$discovery_class_vs_enrich2_surface_abundance)
+
+# quantify absolute position mean for gained 
+
+ggplot(tsv_kir21_all, aes(x=pos_effect_abundance, y=pos_effect_surface_abundance, col=as.factor(lilace_only_kir21_enrich))) + geom_point()
+
+ggplot(tsv_kir21_all, aes(x=pos_effect_abundance, y=pos_effect_surface_abundance, col=as.factor(lilace_only_kir21_weight))) + geom_point()
+
+global_abun_pos_mean <- mean(abs(tsv_kir21_all$pos_effect_abundance), na.rm=T)
+lilace_not_weight_pos_mean <- mean(abs(tsv_kir21_all[tsv_kir21_all$effect_disc_abundance & !tsv_kir21_all$weight_mean_disc_abundance,]$pos_effect_abundance), na.rm=T)
+lilace_not_enrich_pos_mean <- mean(abs(tsv_kir21_all[tsv_kir21_all$effect_disc_abundance & !tsv_kir21_all$enrich_pval_disc_abundance,]$pos_effect_abundance), na.rm=T)
+
+
+global_surf_pos_mean <- mean(abs(tsv_kir21_all$pos_effect_surface_abundance), na.rm=T)
+lilace_not_weight_pos_mean_surf <- mean(abs(tsv_kir21_all[tsv_kir21_all$effect_disc_surface_abundance& !tsv_kir21_all$weight_mean_disc_surface_abundance,]$pos_effect_surface_abundance), na.rm=T)
+lilace_not_enrich_pos_mean_surf <- mean(abs(tsv_kir21_all[tsv_kir21_all$effect_disc_surface_abundance & !tsv_kir21_all$enrich_pval_disc_surface_abundance,]$pos_effect_surface_abundance), na.rm=T)
+
+tsv_kir21_all$is_opposite <- sign(tsv_kir21_all$effect_abundance) != sign(tsv_kir21_all$effect_surface_abundance) & tsv_kir21_all$effect_disc_abundance & tsv_kir21_all$effect_disc_surface_abundance
+
+ggplot(tsv_kir21_all %>% drop_na(), aes(x=pos_effect_abundance, y=pos_effect_surface_abundance, col=is_opposite)) + geom_point() + theme_cowplot()
+
+tsv_kir21_all$is_opposite_weight <- sign(tsv_kir21_all$weight_mean_abundance) != sign(tsv_kir21_all$weight_mean_surface_abundance) & tsv_kir21_all$weight_mean_disc_abundance & tsv_kir21_all$weight_mean_disc_surface_abundance
+
+ggplot(tsv_kir21_all %>% drop_na(), aes(x=pos_effect_abundance, y=pos_effect_surface_abundance, col=is_opposite_weight)) + geom_point() + theme_cowplot()
+
+tsv_kir21_all$is_opposite_enrich <- sign(tsv_kir21_all$enrich_abundance) != sign(tsv_kir21_all$enrich_surface_abundance) & tsv_kir21_all$enrich_pval_disc_abundance & tsv_kir21_all$enrich_pval_disc_surface_abundance
+
+ggplot(tsv_kir21_all %>% drop_na(), aes(x=pos_effect_abundance, y=pos_effect_surface_abundance, col=is_opposite_enrich)) + geom_point() + theme_cowplot()
+
+
+
+```
+
+
+

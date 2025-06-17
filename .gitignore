@@ -1,0 +1,9 @@
+.DS_Store
+hoffman_output/
+datasets/
+workflow/input
+workflow/results
+*.log
+workflow/logs
+workflow/.snakemake/
+workflow/Rplots.pdf

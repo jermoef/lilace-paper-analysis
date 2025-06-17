@@ -1,0 +1,475 @@
+
+```{r, setup, include=FALSE}
+knitr::opts_knit$set(root.dir = "/Users/jerome/DocuLocal/DMS/lilace-paper-analysis")
+library(dplyr)
+```
+
+## GPR68
+```{r}
+data <- read_tsv(file = "datasets/gpr68_counts_cleaned.tsv")
+for (exppheno in c("ph55")) {
+  data_exp <- data %>% 
+              unite("hgvs_exp", hgvs, exp, remove = FALSE) %>% 
+              filter(exp==exppheno) %>% 
+              drop_na()
+  print(exppheno)
+  print(nrow(data_exp))
+  print(head(data_exp))
+  
+  data_exp$n_counts <- apply(data_exp[c("c_0", "c_1", "c_2", "c_3")], 1, sum)
+  data_exp <- data_exp %>% group_by(hgvs_exp) %>% mutate(total_counts=sum(n_counts))
+  data_exp <- data_exp[data_exp$total_counts>=15,]
+  print(nrow(data_exp))
+  saveRDS(data_exp, paste0("workflow/input/data/gpcr_", exppheno, ".RData"))
+}
+
+GPR_FACS_trace_percent_55 <- c(0.2184, 0.1972, 0.1869, 0.1236)
+GPR_FACS_trace_percent_55 <- GPR_FACS_trace_percent_55 / sum(GPR_FACS_trace_percent_55)
+GPR_FACS_trace_percent_55ogr <- c(0.1988, 0.1835, 0.1802, 0.1864)
+GPR_FACS_trace_percent_55ogr <- GPR_FACS_trace_percent_55ogr / sum(GPR_FACS_trace_percent_55ogr)
+GPR_FACS_trace_percent_6 <- c(0.2574, 0.2626, 0.2087, 0.0035)
+GPR_FACS_trace_percent_6 <- GPR_FACS_trace_percent_6 / sum(GPR_FACS_trace_percent_6)
+GPR_FACS_trace_percent_6ogr <- c(0.2107, 0.2066, 0.2265, 0.0893)
+GPR_FACS_trace_percent_6ogr <- GPR_FACS_trace_percent_6ogr / sum(GPR_FACS_trace_percent_6ogr)
+GPR_FACS_trace_percent_65 <- c(0.2672, 0.2677, 0.1843, 0.0003)
+GPR_FACS_trace_percent_65 <- GPR_FACS_trace_percent_65 / sum(GPR_FACS_trace_percent_65)
+GPR_FACS_trace_percent_65ogr <- c(0.2505, 0.2522, 0.2197, 0.0053)
+GPR_FACS_trace_percent_65ogr <- GPR_FACS_trace_percent_65ogr / sum(GPR_FACS_trace_percent_65ogr)
+GPR_FACS_trace_percent_surf <- c(0.2644, 0.2230, 0.1279, 0.0833)
+GPR_FACS_trace_percent_surf <- GPR_FACS_trace_percent_surf / sum(GPR_FACS_trace_percent_surf)
+  
+# rescaled version
+for (exppheno in c("ph55")) {
+  data_exp <- data %>% 
+              unite("hgvs_exp", hgvs, exp, remove = FALSE) %>% 
+              filter(exp==exppheno) %>% 
+              drop_na()
+  print(exppheno)
+  print(nrow(data_exp))
+  print(head(data_exp))
+  print(table(data_exp$rep))
+  
+  # rescale
+  for (rep in unique(data_exp$rep)) {
+    rep_total <- sum(data_exp[data_exp$rep==rep,c("c_0", "c_1", "c_2", "c_3")])
+    for (i in 1:K) {
+      bin <- paste0("c_", 0:3)[i]
+      # rescaled_total_ir = total reads rep r * bin i cell proportion
+      if (exppheno == "ph55") {
+        rescaled_bin_total <- GPR_FACS_trace_percent_55 * rep_total
+      } else if (exppheno == "ph55_ogr") {
+        rescaled_bin_total <- GPR_FACS_trace_percent_55ogr * rep_total
+      } else if (exppheno == "ph6") {
+        rescaled_bin_total <- GPR_FACS_trace_percent_6 * rep_total
+      } else if (exppheno == "ph6_ogr") {
+        rescaled_bin_total <- GPR_FACS_trace_percent_6ogr * rep_total
+      } else if (exppheno == "ph65") {
+        rescaled_bin_total <- GPR_FACS_trace_percent_65 * rep_total
+      } else if (exppheno == "ph65_ogr") {
+        rescaled_bin_total <- GPR_FACS_trace_percent_65ogr * rep_total
+      } else if (exppheno == "surface") {
+        rescaled_bin_total <- GPR_FACS_trace_percent_surf * rep_total
+      } else {
+        print("pheno not recognized")
+        stop()
+      }
+      # c_ir* = c_ir / sum(c_ir) * (rescaled_total_ir)
+      data_exp[data_exp$rep==rep,][[bin]] <- ceiling(data_exp[data_exp$rep==rep,][[bin]] / sum(data_exp[data_exp$rep==rep,][[bin]]) * rescaled_bin_total[i])
+    }
+  }
+  
+  data_exp$n_counts <- apply(data_exp[c("c_0", "c_1", "c_2", "c_3")], 1, sum)
+  data_exp <- data_exp %>% group_by(hgvs_exp) %>% mutate(total_counts=sum(n_counts))
+  data_exp <- data_exp[data_exp$total_counts>=15,]
+  print(nrow(data_exp))
+  saveRDS(data_exp, paste0("workflow/input/data/gpcr_", exppheno, "_rescaled.RData"))
+  
+  data_exp_masked <- data_exp %>% group_by(hgvs_exp) %>% mutate(var_id = cur_group_id())
+  syn_ids <- unique(data_exp_masked[data_exp_masked$type == "synonymous",]$var_id)
+  masked_syn_ids <- sample(syn_ids, length(syn_ids) / 2)
+  data_exp_masked[data_exp_masked$var_id %in% masked_syn_ids,]$type <- "masked_synonymous"
+  print(nrow(data_exp_masked))
+  saveRDS(data_exp_masked, paste0("workflow/input/data/gpcr_", exppheno, "_rescaled_masked.RData"))
+}
+
+for (exppheno in c("ph55")) {
+  data_exp <- data %>% 
+                unite("hgvs_exp", hgvs, exp, remove = FALSE) %>% 
+                filter(exp==exppheno) %>% 
+                drop_na()
+  data_exp$n_counts <- apply(data_exp[c("c_0", "c_1", "c_2", "c_3")], 1, sum)
+  data_exp <- data_exp %>% group_by(hgvs_exp) %>% mutate(total_counts=sum(n_counts))
+  data_exp <- data_exp[data_exp$total_counts>=15,]
+  data_exp <- data_exp[data_exp$position %in% 1:21,]
+  saveRDS(data_exp, paste0("workflow/input/data/gpcr_", exppheno, "_20pos.RData"))
+}
+```
+
+## Kir2.1
+```{r}
+# Kir2.1
+for (pheno in c("Abundance", "Surface")) {
+  kir21_abun_df <- c()
+  n_reps <- 2
+  if (pheno == "Surface") {
+    n_reps <- 3
+  }
+  for (rep in 1:n_reps) {
+    rep_df <- c()
+    for (gate in c(1,2,3,4)) {
+      count_df_L1 <- read_csv(paste0("datasets/Kir2.1/Kir21/results/kir21/processed_counts/counts/L", 1, "_", pheno, "_R", rep, "_", gate, ".csv"))
+      colnames(count_df_L1)[1] <- paste0("c_", gate-1)
+      count_df_L1$rep <- paste0("R", rep)
+      
+      if (pheno == "Surface" && rep == 3) {
+        count_df <- count_df_L1 # rep is missing L2 bin 3
+      } else {
+      
+        count_df_L2 <- read_csv(paste0("datasets/Kir2.1/Kir21/results/kir21/processed_counts/counts/L", 2, "_", pheno, "_R", rep, "_", gate, ".csv"))
+        colnames(count_df_L2)[1] <- paste0("c_", gate-1)
+        count_df_L2$rep <- paste0("R", rep)
+        
+        join_cols <- colnames(count_df_L1)[2:length(colnames(count_df_L1))]
+        count_col <- colnames(count_df_L1)[1]
+        count_df <- full_join(count_df_L1, count_df_L2, by=join_cols, suffix=c("_L1", "_L2"))
+        count_df[[count_col]] <- count_df[[paste0(count_col, "_L1")]] + count_df[[paste0(count_col, "_L2")]]
+        count_df <- count_df %>% select(-contains("L1"), -contains("L2"))
+      }
+      
+      if (length(rep_df) == 0) {
+        rep_df <- count_df
+      } else {
+        rep_df <- merge(rep_df, count_df)
+      }
+    }
+    kir21_abun_df <- rbind(kir21_abun_df, rep_df)
+  }
+  
+  # add position wildtype mutation type exp rep columns
+  kir21_abun_df <- kir21_abun_df %>% extract(name, into=c("wildtype", "position", "mutation"), "^(\\D+)(\\d+)([\\D_\\d]+)$", remove=F)
+  
+  indel_df <- kir21_abun_df$mutation[str_detect(kir21_abun_df$mutation, "_")] %>% as.data.frame %>% extract(".", into=c("aa", "pos_end", "raw_type"), "^_(\\D+)(\\d+)(\\D+)$")
+  indel_df$pos_start <- kir21_abun_df[str_detect(kir21_abun_df$mutation, "_"),]$position
+  indel_df$pos_diff <- as.numeric(indel_df$pos_end) - as.numeric(indel_df$pos_start)
+  indel_df$type <- ifelse(indel_df$raw_type == "del", paste0(indel_df$raw_type, indel_df$pos_diff), indel_df$raw_type)
+  
+  kir21_abun_df$mutation[str_detect(kir21_abun_df$mutation, "_")] <- indel_df$type 
+  kir21_abun_df$type <- ifelse(kir21_abun_df$wildtype == kir21_abun_df$mutation, "synonymous", 
+                         ifelse(kir21_abun_df$mutation == "del", "deletion", "missense"))
+  kir21_abun_df$exp <- 1
+  kir21_abun_df <- kir21_abun_df %>% select(hgvs, wildtype, position, mutation, type, c_0, c_1, c_2, c_3, rep, exp)
+  data_exp <- kir21_abun_df %>% 
+                unite("hgvs_exp", hgvs, exp, remove = FALSE) %>% 
+                drop_na()
+  
+  data_exp$n_counts <- apply(data_exp[c("c_0", "c_1", "c_2", "c_3")], 1, sum)
+  data_exp <- data_exp %>% group_by(hgvs_exp) %>% mutate(total_counts=sum(n_counts))
+  print(nrow(data_exp))
+  saveRDS(data_exp, paste0("workflow/input/data/kir21_", pheno, ".RData"))
+  
+  K <- sum(startsWith(colnames(data_exp), "c_"))
+  if (pheno == "Abundance") {
+    sort_counts <- c(318932, 401445, 411954, 341856)
+    GPR_FACS_trace_percent_kir21 <- sort_counts / sum(sort_counts)
+  } else if (pheno == "Surface") {
+    GPR_FACS_trace_percent_kir21 <- c(0.316, 0.211, 0.299, 0.093)
+  }
+  GPR_FACS_trace_percent_kir21 <- GPR_FACS_trace_percent_kir21 / sum(GPR_FACS_trace_percent_kir21)
+  data_exp <- kir21_abun_df %>% 
+                unite("hgvs_exp", hgvs, exp, remove = FALSE) %>% 
+                drop_na()
+  # rescale
+  for (rep in unique(data_exp$rep)) {
+    rep_total <- sum(data_exp[data_exp$rep==rep,c("c_0", "c_1", "c_2", "c_3")])
+    for (i in 1:K) {
+      bin <- paste0("c_", 0:(K-1))[i]
+      rescaled_bin_total <- GPR_FACS_trace_percent_kir21 * rep_total
+      data_exp[data_exp$rep==rep,][[bin]] <- ceiling(data_exp[data_exp$rep==rep,][[bin]] / sum(data_exp[data_exp$rep==rep,][[bin]]) * rescaled_bin_total[i])
+    }
+  }
+  
+  data_exp$n_counts <- apply(data_exp[c("c_0", "c_1", "c_2", "c_3")], 1, sum)
+  data_exp <- data_exp %>% group_by(hgvs_exp) %>% mutate(total_counts=sum(n_counts))
+  print(nrow(data_exp))
+  saveRDS(data_exp, paste0("workflow/input/data/Kir21_", pheno, "_rescaled.RData"))
+  print(paste0("workflow/input/data/Kir21_", pheno, "_rescaled.RData"))
+  
+  data_exp_masked <- data_exp %>% group_by(hgvs_exp) %>% mutate(var_id = cur_group_id())
+  syn_ids <- unique(data_exp_masked[data_exp_masked$type == "synonymous",]$var_id)
+  masked_syn_ids <- sample(syn_ids, length(syn_ids) / 2)
+  data_exp_masked[data_exp_masked$var_id %in% masked_syn_ids,]$type <- "masked_synonymous"
+  print(nrow(data_exp_masked))
+  saveRDS(data_exp_masked, paste0("workflow/input/data/Kir21_", pheno, "_rescaled_masked.RData"))
+}
+```
+
+## OCT1
+```{r}
+# format OCT1
+oct1_df <- c()
+for (r in c(1,2,3)) {
+  rep_df <- c()
+  for (g_id in c(1,2,3,4)) {
+      count_df <- read_tsv(paste0("datasets/OCT1/tsv/Gate", g_id, "_GFPR", r, "_lib/main_identifiers_counts.tsv"))
+      colnames(count_df)[2] <- paste0("c_", g_id-1)
+      count_df$rep <- paste0("R", r)
+      if (length(rep_df) == 0) {
+        rep_df <- count_df
+      } else {
+        rep_df <- merge(rep_df, count_df)
+      }
+  }
+  oct1_df <- rbind(oct1_df, rep_df)
+}
+
+oct1_df <- oct1_df %>% filter(hgvs != "_wt")
+# add position wildtype mutation type exp rep columns
+oct1_df <- oct1_df %>% extract(hgvs, into=c("wildtype", "position", "mutation"), "^p.\\((\\D+)(\\d+)(\\D+)\\)$", remove=F)
+oct1_df$type <- ifelse(oct1_df$wildtype == oct1_df$mutation, "synonymous", 
+                       ifelse(oct1_df$mutation == "del", "deletion", "missense"))
+oct1_df$exp <- 1
+data_exp <- oct1_df %>% 
+              unite("hgvs_exp", hgvs, exp, remove = FALSE) %>% 
+              drop_na()
+
+data_exp$n_counts <- apply(data_exp[c("c_0", "c_1", "c_2", "c_3")], 1, sum)
+data_exp <- data_exp %>% group_by(hgvs_exp) %>% mutate(total_counts=sum(n_counts))
+print(nrow(data_exp))
+saveRDS(data_exp, paste0("workflow/input/data/oct1.RData"))
+
+K <- sum(startsWith(colnames(data_exp), "c_"))
+GPR_FACS_trace_percent_oct1 <- c(0.251, 0.242, 0.247, 0.226)
+GPR_FACS_trace_percent_oct1 <- GPR_FACS_trace_percent_oct1 / sum(GPR_FACS_trace_percent_oct1)
+data_exp <- oct1_df %>% 
+              unite("hgvs_exp", hgvs, exp, remove = FALSE) %>% 
+              drop_na()
+# rescale
+for (rep in unique(data_exp$rep)) {
+  rep_total <- sum(data_exp[data_exp$rep==rep,c("c_0", "c_1", "c_2", "c_3")])
+  for (i in 1:K) {
+    bin <- paste0("c_", 0:(K-1))[i]
+    rescaled_bin_total <- GPR_FACS_trace_percent_oct1 * rep_total
+    data_exp[data_exp$rep==rep,][[bin]] <- ceiling(data_exp[data_exp$rep==rep,][[bin]] / sum(data_exp[data_exp$rep==rep,][[bin]]) * rescaled_bin_total[i])
+  }
+}
+
+data_exp$n_counts <- apply(data_exp[c("c_0", "c_1", "c_2", "c_3")], 1, sum)
+data_exp <- data_exp %>% group_by(hgvs_exp) %>% mutate(total_counts=sum(n_counts))
+print(nrow(data_exp))
+saveRDS(data_exp, paste0("workflow/input/data/oct1_rescaled.RData"))
+
+```
+
+## PTEN
+```{r}
+# format PTEN
+PTEN_enrich_counts <- read_csv("datasets/VAMP_seq/pten_counts.csv")
+PTEN_enrich_counts <- PTEN_enrich_counts %>% separate(variant_SeqID_AA, into=c("position", "mutation"), sep="-")
+PTEN_enrich_counts$position <- as.numeric(PTEN_enrich_counts$position)
+PTEN_enrich_counts <- PTEN_enrich_counts %>% pivot_longer(cols = starts_with("exp"), names_to = c("exp", "bin"), names_pattern = "exp(\\d+)_bin(\\d+)_count")
+PTEN_enrich_counts$bin <- as.numeric(PTEN_enrich_counts$bin) - 1
+PTEN_enrich_counts <- PTEN_enrich_counts %>% pivot_wider(names_from = "bin", values_from="value", names_prefix="c_")
+# turn nt into residue position
+PTEN_enrich_counts <- PTEN_enrich_counts %>% separate(variant_SeqID_NT, into=c("nt_pos", "nt_mut"), sep="-")
+PTEN_variant_data_raw <- read_tsv("datasets/VAMP_seq/PTEN_variant_data.tsv")
+PTEN_variant_data <- read_tsv("datasets/VAMP_seq/PTEN_variant_data.tsv") %>% select(variant, position, start, end, class, abundance_class, score, sd, se)
+colnames(PTEN_variant_data)[3:5] <- c("wildtype", "mutation", "type")
+PTEN_variant_data[PTEN_variant_data$type=="synonymous",]$mutation <- "WTAA"
+PTEN_variant_data[PTEN_variant_data$type=="nonsense",]$mutation <- "*"
+
+# get potential positions for each syn variant
+nt_pos <- strsplit(PTEN_enrich_counts[PTEN_enrich_counts$mutation=="WTAA",]$nt_pos, ",")
+PTEN_enrich_counts$residue_pos <- NA
+for (i in 1:length(nt_pos)) {
+  pos_i <- ceiling(as.numeric(nt_pos[[i]]) / 3)
+  # pick first potential position from list of synonymous positions in variant data
+  pos_i_in_data <- pos_i %in% PTEN_variant_data[PTEN_variant_data$type=="synonymous",]$position
+  res_pos <- pos_i[pos_i_in_data][1]
+  if (is.na(res_pos)) {
+    PTEN_enrich_counts[PTEN_enrich_counts$mutation=="WTAA",][i,]$residue_pos <- pos_i[1]
+  } else {
+    PTEN_enrich_counts[PTEN_enrich_counts$mutation=="WTAA",][i,]$residue_pos <- res_pos
+  }
+}
+
+PTEN_enrich_counts[PTEN_enrich_counts$position == 999,]$position <- PTEN_enrich_counts[PTEN_enrich_counts$position == 999,]$residue_pos
+# get rid of nt info
+PTEN_enrich_counts <- PTEN_enrich_counts[,4:ncol(PTEN_enrich_counts)]
+colnames(PTEN_enrich_counts)[3] <- "rep"
+
+
+data <- merge(PTEN_enrich_counts, PTEN_variant_data, all.x=T) %>% select(variant, position, wildtype, mutation, type, starts_with("c_"), rep, abundance_class, score, sd, se)
+data <- data[!is.na(data$type),]
+data[data$type=="synonymous",]$mutation <- data[data$type=="synonymous",]$wildtype
+data$exp <- 1
+colnames(data)[1] <- "hgvs"
+
+# save data input drop NA
+data_exp <- data %>% 
+              unite("hgvs_exp", hgvs, exp, remove = FALSE) %>% 
+              drop_na()
+print(nrow(data_exp))
+# combine duplicate variants
+count_sum_df <- data_exp %>% group_by(hgvs_exp, rep) %>% summarize(c_0=sum(c_0), c_1=sum(c_1), c_2=sum(c_2), c_3=sum(c_3))
+data_exp <- merge(distinct(data_exp %>% select(!starts_with("c_"))), count_sum_df)
+
+data_exp$n_counts <- apply(data_exp[c("c_0", "c_1", "c_2")], 1, sum)
+data_exp <- data_exp %>% group_by(hgvs_exp) %>% mutate(total_counts=sum(n_counts))
+print(nrow(data_exp))
+saveRDS(data_exp, paste0("workflow/input/data/pten_dropNA.RData"))
+```
+
+## TPMT
+```{r}
+# format TPMT
+TPMT_enrich_counts <- read_csv("datasets/VAMP_seq/tpmt_counts.csv")
+TPMT_enrich_counts <- TPMT_enrich_counts %>% separate(variant_SeqID_AA, into=c("position", "mutation"), sep="-")
+TPMT_enrich_counts$position <- as.numeric(TPMT_enrich_counts$position)
+TPMT_enrich_counts <- TPMT_enrich_counts %>% pivot_longer(cols = starts_with("exp"), names_to = c("exp", "bin"), names_pattern = "exp(\\d+)_bin(\\d+)_count")
+TPMT_enrich_counts$bin <- as.numeric(TPMT_enrich_counts$bin) - 1
+TPMT_enrich_counts <- TPMT_enrich_counts %>% pivot_wider(names_from = "bin", values_from="value", names_prefix="c_")
+# turn nt into residue position
+TPMT_enrich_counts <- TPMT_enrich_counts %>% separate(variant_SeqID_NT, into=c("nt_pos", "nt_mut"), sep="-")
+TPMT_variant_data_raw <- read_tsv("datasets/VAMP_seq/TPMT_variant_data.tsv")
+TPMT_variant_data <- read_tsv("datasets/VAMP_seq/TPMT_variant_data.tsv") %>% select(variant, position, start, end, class, abundance_class, score, sd, se)
+colnames(TPMT_variant_data)[3:5] <- c("wildtype", "mutation", "type")
+TPMT_variant_data[TPMT_variant_data$type=="synonymous",]$mutation <- "WTAA"
+TPMT_variant_data[TPMT_variant_data$type=="nonsense",]$mutation <- "*"
+
+# get potential positions for each syn variant
+nt_pos <- strsplit(TPMT_enrich_counts[TPMT_enrich_counts$mutation=="WTAA",]$nt_pos, ",")
+TPMT_enrich_counts$residue_pos <- NA
+for (i in 1:length(nt_pos)) {
+  pos_i <- ceiling(as.numeric(nt_pos[[i]]) / 3)
+  # pick first potential position from list of synonymous positions in variant data
+  pos_i_in_data <- pos_i %in% TPMT_variant_data[TPMT_variant_data$type=="synonymous",]$position
+  res_pos <- pos_i[pos_i_in_data][1]
+  if (is.na(res_pos)) {
+    TPMT_enrich_counts[TPMT_enrich_counts$mutation=="WTAA",][i,]$residue_pos <- pos_i[1]
+  } else {
+    TPMT_enrich_counts[TPMT_enrich_counts$mutation=="WTAA",][i,]$residue_pos <- res_pos
+  }
+}
+
+# TPMT_enrich_counts <- TPMT_enrich_counts %>% separate(nt_pos, into=c("nt_pos1", "nt_pos2"), sep=",")
+# TPMT_enrich_counts$residue_pos <- ceiling(as.numeric(TPMT_enrich_counts$nt_pos1) / 3)
+TPMT_enrich_counts[TPMT_enrich_counts$position == 999,]$position <- TPMT_enrich_counts[TPMT_enrich_counts$position == 999,]$residue_pos
+# get rid of nt info
+TPMT_enrich_counts <- TPMT_enrich_counts[,4:ncol(TPMT_enrich_counts)]
+colnames(TPMT_enrich_counts)[3] <- "rep"
+
+
+data <- merge(TPMT_enrich_counts, TPMT_variant_data, all.x=T) %>% select(variant, position, wildtype, mutation, type, starts_with("c_"), rep, abundance_class, score, sd, se)
+data <- data[!is.na(data$type),]
+data[data$type=="synonymous",]$mutation <- data[data$type=="synonymous",]$wildtype
+data$exp <- 1
+colnames(data)[1] <- "hgvs"
+
+# save data input drop NA
+data_exp <- data %>% 
+              unite("hgvs_exp", hgvs, exp, remove = FALSE) %>% 
+              drop_na()
+print(nrow(data_exp))
+# combine duplicate variants
+count_sum_df <- data_exp %>% group_by(hgvs_exp, rep) %>% summarize(c_0=sum(c_0), c_1=sum(c_1), c_2=sum(c_2), c_3=sum(c_3))
+data_exp <- merge(distinct(data_exp %>% select(!starts_with("c_"))), count_sum_df)
+
+data_exp$n_counts <- apply(data_exp[c("c_0", "c_1", "c_2")], 1, sum)
+data_exp <- data_exp %>% group_by(hgvs_exp) %>% mutate(total_counts=sum(n_counts))
+print(nrow(data_exp))
+
+
+saveRDS(data_exp, paste0("workflow/input/data/tpmt_dropNA.RData"))
+```
+
+## P2RY8
+```{r}
+library(Biostrings)
+p2ry8_file <- "datasets/P2RY8/counts.csv"
+table_starts <- list(
+                 list(3250,3611,3972,4333), # transduction 3
+                 list(5055,5416,5777,6138), # transduction 4
+                 list(7943,8304,8665,9026), # transduction 5
+                 list(12636,12997,13358,13719)) # transduction 7
+p2ry8_df <- c()
+for (rep in c(1,2,3,4)) {
+  for (bin in c(1,2,3,4)) {
+    rep_bin_df <- read.csv(p2ry8_file, skip=table_starts[[rep]][[bin]], nrows=358)
+    # rename codon to AA
+    for (i in 2:(length(colnames(rep_bin_df))-3)) {
+      codon <- colnames(rep_bin_df)[i]
+      AA <- GENETIC_CODE[codon]
+      colnames(rep_bin_df)[i] <- AA
+    }
+    # add up counts for same codons
+    rep_bin_df <- t(rowsum(t(rep_bin_df), group = colnames(rep_bin_df))) 
+    rep_bin_df <- as.data.frame(rep_bin_df)
+    rep_bin_df$rep <- paste0("R", rep)
+    rep_bin_df$bin <- paste0("c_", bin-1)
+    p2ry8_df <- rbind(p2ry8_df, rep_bin_df)
+  }
+}
+p2ry8_df$Total <- NULL
+p2ry8_df$FS <- NULL
+p2ry8_df$NFS <- NULL
+p2ry8_df <- p2ry8_df %>% pivot_longer(!c(Pos, rep, bin), names_to="mutation", values_to="count")
+p2ry8_df <- p2ry8_df %>% pivot_wider(id_cols=c(Pos, rep, mutation), names_from="bin", values_from="count")
+
+# add reference info
+ref_seq <- c("MQVPNSTGPDNATLQMLRNPAIAVALPVVYSLVAAVSIPGNLFSLWVLCRRMGPRSPSVIFMINLSVTDLMLASVLPFQIYYHCNRHHWVFGVLLCNVVTVAFYANMYSSILTMTCISVERFLGVLYPLSSKRWRRRRYAVAACAGTWLLLLTALSPLARTDLTYPVHALGIITCFDVLKWTMLPSVAMWAVFLFTIFILLFLIPFVITVACYTATILKLLRTEEAHGREQRRRAVGLAAVVLLAFVTCFAPNNFVLLAHIVSRLFYGKSYYHVYKLTLCLSCLNNCLDPFVYYFASREFQLRLREYLGCRRVPRDTLDTRRESLFSARTTSVRSEAGAHPEGMEGATRPGLQRQESVF")
+ref_muts <- data.frame(Pos=1:359,wildtype=unlist(strsplit(ref_seq,split = NULL)))
+p2ry8_df <- merge(p2ry8_df, ref_muts)
+p2ry8_df$type <- ifelse(p2ry8_df$wildtype == p2ry8_df$mutation, "synonymous", "missense")
+p2ry8_df[p2ry8_df$mutation=="*",]$type <- "nonsense"
+# p2ry8_df[p2ry8_df$mutation=="FS",]$type <- "FS"
+# p2ry8_df[p2ry8_df$mutation=="NFS",]$type <- "NFS"
+p2ry8_df$position <- p2ry8_df$Pos
+p2ry8_df$hgvs <- paste0("p.(",p2ry8_df$wildtype,p2ry8_df$position,p2ry8_df$mutation,")")
+p2ry8_df$exp <- "surf"
+p2ry8_df <- p2ry8_df[c("hgvs", "position", "wildtype", "mutation", "type", "c_0", "c_1", "c_2", "c_3", "exp", "rep")]
+
+data_exp <- p2ry8_df %>% 
+              unite("hgvs_exp", hgvs, exp, remove = FALSE) %>% 
+              drop_na()
+print(nrow(data_exp))
+print(head(data_exp))
+
+data_exp$n_counts <- apply(data_exp[c("c_0", "c_1", "c_2", "c_3")], 1, sum)
+data_exp <- data_exp %>% group_by(hgvs_exp) %>% mutate(total_counts=sum(n_counts))
+data_exp <- data_exp[data_exp$total_counts>=15,]
+print(nrow(data_exp))
+saveRDS(data_exp, paste0("workflow/input/data/p2ry8_surf.RData"))
+
+ggplot(data_exp, aes(total_counts, fill=type)) + geom_histogram()
+
+# rescaled version
+K <- sum(startsWith(colnames(data_exp), "c_"))
+FACS_trace_percent_p2ry8 <- c(0.2, 0.3, 0.3, 0.2)
+data_exp <- p2ry8_df %>% 
+              unite("hgvs_exp", hgvs, exp, remove = FALSE) %>% 
+              drop_na()
+# rescale
+for (rep in unique(data_exp$rep)) {
+  rep_total <- sum(data_exp[data_exp$rep==rep,c("c_0", "c_1", "c_2", "c_3")])
+  for (i in 1:K) {
+    bin <- paste0("c_", 0:(K-1))[i]
+    rescaled_bin_total <- FACS_trace_percent_p2ry8 * rep_total
+    data_exp[data_exp$rep==rep,][[bin]] <- ceiling(data_exp[data_exp$rep==rep,][[bin]] / sum(data_exp[data_exp$rep==rep,][[bin]]) * rescaled_bin_total[i])
+  }
+}
+
+data_exp$n_counts <- apply(data_exp[c("c_0", "c_1", "c_2", "c_3")], 1, sum)
+data_exp <- data_exp %>% group_by(hgvs_exp) %>% mutate(total_counts=sum(n_counts))
+data_exp <- data_exp[data_exp$total_counts>=15,]
+print(nrow(data_exp))
+saveRDS(data_exp, paste0("workflow/input/data/p2ry8_surf_rescaled.RData"))
+
+```
+
+
+
+
+
+
+
+

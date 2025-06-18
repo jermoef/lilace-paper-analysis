@@ -7,3 +7,7 @@ workflow/results
 workflow/logs
 workflow/.snakemake/
 workflow/Rplots.pdf
+src/models/baseline
+src/models/FACS_double_sample_repq
+src/models/FACS_double_sample_repq_nopos
+src/models/FACS_double_sample_count_grouped

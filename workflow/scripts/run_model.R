@@ -1,6 +1,5 @@
 library(ggplot2)
 library(dplyr)
-library(lilace)
 source('../src/build_sim.R')
 source('../src/fit_func.R')
 source('../src/methods/method_utils.R')

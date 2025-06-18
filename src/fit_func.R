@@ -95,6 +95,7 @@ fit_overall <- function(obs_df, baseline_file, model_file,
 
     vMAPp <- distinct(data.frame(hgvs_exp = data_exp$hgvs_exp, nMAPv = nMAPv, type = data_exp$type, position = data_exp$position)) %>%
             arrange(nMAPv)
+    vMAPp$position <- as.numeric(vMAPp$position)
     # group position w/ < 10 variants with next position
     positions <- sort(unique(vMAPp$position))
     print("grouping positions")

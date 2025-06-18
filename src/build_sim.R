@@ -57,6 +57,7 @@ sort_samples <- function(sampled_sim_obj, i, j, r) {
     list2env(sampled_sim_obj, envir = environment())
     variant_samples <- samples[!is.na(samples[,1]) & samples[,2]==i & samples[,3]==j & samples[,4]==r, 1]
     levels <- cut(variant_samples, cutoffs)
+    print(table(levels, useNA="ifany"))
     bin_counts <- as.numeric(table(levels))
     # assert bin counts matches number of bins
     stopifnot(length(bin_counts)==n_bins)
@@ -174,11 +175,11 @@ sim_FACS <- function(sampled_sim_obj) {
     if (FACS_gating == "log_equal") {
         qtiles <- quantile(log(samples[,1]), na.rm=T, probs=seq(0,1,1/n_bins))
         qtiles <- qtiles - gate_offset
-        cutoffs <- c(0,exp(qtiles[2:length(qtiles)]))
+        cutoffs <- c(0,exp(qtiles[2:(length(qtiles)-1)]), max(samples[,1]))
     } else if (FACS_gating == "equal") {
         qtiles <- quantile(samples[,1], na.rm=T)
         qtiles <- qtiles - gate_offset
-        cutoffs <- c(-Inf,qtiles[2:length(qtiles)])
+        cutoffs <- c(-Inf,qtiles[2:(length(qtiles)-1)], max(samples[,1]))
     } else if (FACS_gating == "modes") {
         # TODO: set gates based on modes of bimodal overall distribution
         print("modes strat not implemented")

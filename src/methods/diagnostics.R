@@ -44,17 +44,13 @@ label_significant <- function(df, effect_cols, sd_cols, c_thresh) {
     if (method %in% colnames(df)) {
       if (grepl("enrich_score", method, fixed=T)) {
         # adjust enrich p-pvalues
-        # print(hist(df$enrich_pval))
         df$enrich_pval_adjusted <- p.adjust(df$enrich_pval, method="BH")
-        # print(hist(df$enrich_pval_adjusted))
         df[paste0(method, "_disc")] <- df$enrich_pval_adjusted <= 1 - c_thresh
         df[paste0(method, "_isnull")] <- df$enrich_pval_adjusted > 1 - c_thresh
-        # df[paste0(method, "_rank")] <- rank(df$enrich_pval_adjusted, ties.method="first")
         rank_name <- paste0(method, "_rank")
         rank_fit_df <- df %>% group_by(hgvs) %>% filter(row_number() == 1) %>% ungroup() %>% 
           mutate(!! rank_name := dense_rank(enrich_pval_adjusted)) %>% select(hgvs, one_of(rank_name))
         df <- merge(df, rank_fit_df)
-        # df[paste0(method, "_rank")] <- rank(-abs(df$effect))
         # add syn sd cut
         method_sd_cut <- paste0(method, "_syn_sd")
         syn_muts <- df[df$type=="synonymous", method]
@@ -68,7 +64,6 @@ label_significant <- function(df, effect_cols, sd_cols, c_thresh) {
         rank_fit_df <- df %>% group_by(hgvs) %>% filter(row_number() == 1) %>% ungroup() %>% 
           mutate(!! rank_name := dense_rank(get(paste0(method_sd_cut, "_pval")))) %>% select(hgvs, one_of(rank_name))
         df <- merge(df, rank_fit_df)
-        # df[paste0(method_sd_cut, "_rank")] <- rank(2*pnorm(-abs((df[[method]] - syn_mean)/syn_sd)))
       } else if (grepl("mu_mean", method, fixed=T)) {
         model <- strsplit(method, "_mu_mean")[[1]]
         lfsr <- df[[paste0(model, "_mu_lfsr")]]
@@ -85,26 +80,12 @@ label_significant <- function(df, effect_cols, sd_cols, c_thresh) {
         rank_fit_df <- df %>% group_by(hgvs) %>% filter(row_number() == 1) %>% ungroup() %>% 
           mutate(!! rank_name := dense_rank(get(paste0(model, "_mu_lfsr_approx")))) %>% select(hgvs, one_of(rank_name))
         df <- merge(df, rank_fit_df)
-        # df[paste0(method, "_rank")] <- rank(df[[paste0(model, "_mu_lfsr_approx")]], ties.method="first")
-
-    #   } else if (method == "ML_effect_mean") {
-    #     print("Using ML pval")
-    #     df[paste0(method, "_disc")] <- df$ML_pval < 1 - c_thresh
-    #     df[paste0(method, "_isnull")] <- df$ML_pval > 1 - c_thresh
-    #     df[paste0(method, "_rank")] <- rank(df$ML_pval)
-    #   } else if (method == "shep_effect_mean") {
-    #     print("Using shep pval")
-    #     df[paste0(method, "_disc")] <- df$shep_pval < 1 - c_thresh
-    #     df[paste0(method, "_isnull")] <- df$shep_pval > 1 - c_thresh
-    #     df[paste0(method, "_rank")] <- rank(df$shep_pval)
-    #   } 
       } else if (is.na(sd_cols[i])) {
         # fit normal to synonymous to get syn mean and syn sd
         syn_muts <- df[df$type=="synonymous", method]
         dist <- MASS::fitdistr(syn_muts[!is.na(syn_muts)], "normal")
         syn_mean <- dist$estimate[1]
         syn_sd <- dist$estimate[2]
-        # df[paste0(method_sd_cut, "_disc")] <- (mean < syn_mean - 2*syn_sd) | (mean > syn_mean + 2*syn_sd)
         df[paste0(method_sd_cut, "_disc")] <- 2*pnorm(-abs((mean - syn_mean)/syn_sd)) < 1 - c_thresh
         df[paste0(method_sd_cut, "_isnull")] <- !df[paste0(method_sd_cut, "_disc")]
         df[paste0(method_sd_cut, "_pval")] <- 2*pnorm(-abs((df[[method]] - syn_mean)/syn_sd))
@@ -112,7 +93,6 @@ label_significant <- function(df, effect_cols, sd_cols, c_thresh) {
         rank_fit_df <- df %>% group_by(hgvs) %>% filter(row_number() == 1) %>% ungroup() %>% 
           mutate(!! rank_name := dense_rank(get(paste0(method_sd_cut, "_pval")))) %>% select(hgvs, one_of(rank_name))
         df <- merge(df, rank_fit_df)
-        # df[paste0(method_sd_cut, "_rank")] <- rank(2*pnorm(-abs((mean - syn_mean)/syn_sd)))
       } else {
         # lfsr analgoues
         mean <- df[[effect_cols[i]]]
@@ -125,10 +105,7 @@ label_significant <- function(df, effect_cols, sd_cols, c_thresh) {
         rank_fit_df <- df %>% group_by(hgvs) %>% filter(row_number() == 1) %>% ungroup() %>% 
           mutate(!! rank_name := dense_rank(get(paste0(method, "_lfsr")))) %>% select(hgvs, one_of(rank_name))
         df <- merge(df, rank_fit_df)
-        # df[paste0(method, "_rank")] <- rank(lfsr, ties.method="first")
         method_sd_cut <- paste0(method, "_syn_sd")
-        # syn_mean <- mean(df[df$type=="synonymous", method])
-        # syn_sd <- sd(df[df$type=="synonymous", method])
 
         # fit normal to synonymous to get syn mean and syn sd
         syn_muts <- df[df$type=="synonymous", method]
@@ -143,7 +120,6 @@ label_significant <- function(df, effect_cols, sd_cols, c_thresh) {
         rank_fit_df <- df %>% group_by(hgvs) %>% filter(row_number() == 1) %>% ungroup() %>% 
           mutate(!! rank_name := dense_rank(get(paste0(method_sd_cut, "_pval")))) %>% select(hgvs, one_of(rank_name))
         df <- merge(df, rank_fit_df)
-        # df[paste0(method_sd_cut, "_rank")] <- rank(2*pnorm(-abs((mean - syn_mean)/syn_sd)))
       }
     }
   }

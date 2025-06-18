@@ -152,7 +152,7 @@ add_FACS_df <- function(sampled_sim_obj) {
     if (bin_phi != -1) {
         print("Sampling bin wise reads")
         for (r in 1:n_replicates) {
-            count_props <- sweep(count_df[obs_df$rep == r,], 2, colSums(count_df[obs_df$rep == r,]), '/')
+            count_props <- sweep(count_df[obs_df$rep == r,], 2, colSums(count_df[obs_df$rep == r,]), '/') # note: using count_df here
             count_props[count_props==0] <- count_props[count_props==0] + 1e-16 # avoid zero alpha
             observed_bin_counts <- sapply(1:n_bins, function(k) {
                 p <- brms::rdirichlet(1, bin_phi*count_props[,k])

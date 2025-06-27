@@ -22,6 +22,9 @@ param_vals: [[0],
   [0.5, 1, 2], # rep effect
   [1, 2, 3]] # num replicates
 
+# params: ["none", "gate_offset"]
+# param_vals: [[0], [0.3, 1, 2, 3]]
+
 # params: ["none"]
 # param_vals: [[0]]
 
@@ -29,5 +32,6 @@ datasets: ['oct1_rescaled', 'Kir21_surface_abundance_rescaled']
 models: ['FACS_double_sample_repq']
 methods: ['enrich2', 'ML', 'MoM', 'weight_mean']
 
+selfphi: False
 SHELL: "bash"
 RCFILE: ".bashrc"

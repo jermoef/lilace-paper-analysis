@@ -471,7 +471,8 @@ make_FDR_plots <- function(yaml, FDR_df, outdir, plot_mean_effect=T, axis_text_s
               # theme(axis.text.x = element_text(angle = 70, vjust = 0.3, hjust=1), legend.position = 'bottom')
           } else {
             p_FDR <- ggplot(FDR_df_summary, aes(x=sample_ord, y=mean_FDR, color=as.factor(param_val))) + 
-              expand_limits(y=0) + 
+              # expand_limits(y=0) + 
+              coord_cartesian(ylim = c(0, NA)) +
               geom_pointrange(aes(ymin = mean_FDR - sd_FDR, ymax = mean_FDR + sd_FDR), position = position_dodge2(0.5, preserve = "single"), size=0.75) +
               # geom_boxplot(width = 0.5, position = position_dodge(0.6)) + 
               theme_cowplot() + xlab("method") + ylab("FDR") + guides(color=guide_legend(title=cur_param)) +

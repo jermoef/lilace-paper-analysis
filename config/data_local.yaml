@@ -12,7 +12,7 @@ models: ['FACS_double_sample_repq', 'FACS_double_sample_repq_nopos']
 methods: ['enrich2', 'ML', 'MoM', 'weight_mean']
 
 prop_masked: [0.1]
-n_masked_iter: 1
+n_masked_iter: 0
 
 SHELL: "zsh"
 RCFILE: ".zshrc"

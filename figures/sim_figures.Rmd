@@ -12,12 +12,11 @@ knitr::opts_chunk$set(echo = TRUE)
 
 # Main figures
 ```{r}
-source("../../src/methods/diagnostics.R")
-source("../../src/plot_func.R")
-yaml <- yaml::read_yaml("../../config/sim_hoffman.yaml")
-res_dir <- "../../hoffman_output/sim_res/sim"
-plot_dir <- "sim_figures/100pos"
-# plot_dir <- "sim_figures/other_models"
+source("../src/methods/diagnostics.R")
+source("../src/plot_func.R")
+yaml <- yaml::read_yaml("../config/sim_hoffman.yaml")
+res_dir <- "../workflow/results/sim"
+plot_dir <- "sim_figures"
 sim_model_stats <- get_sim_model_stats(yaml, res_dir)
 
 
@@ -25,6 +24,7 @@ FDR_df_raw <- get_FDR_df(yaml, res_dir)
 FDR_df_raw <- unique(FDR_df_raw)
 FDR_df <- rename_methods(FDR_df_raw)
 FDR_df <- rename_params(FDR_df)
+
 # cross-parameter plots + default plot
 FDR_df <- FDR_df[FDR_df$method != "mean bin\nnorm approx" &
                  FDR_df$method != "ML\nnorm approx" & 
@@ -109,7 +109,7 @@ sig_FDR_df <- rename_methods(sig_FDR_df)
 sig_FDR_df_filtered <- sig_FDR_df[sig_FDR_df$method != "Lilace\n(unrecalibrated)" &
                                   sig_FDR_df$method != "mean bin" &
                                   sig_FDR_df$method != "ML_effect_mean",]
-source("../../src/plot_func.R")
+source("../src/plot_func.R")
 make_cross_sig_plots(yaml, sig_FDR_df_filtered, plot_dir)
 
 # large effect FNR plots
@@ -149,8 +149,8 @@ for (dataset in unique(FDR_df_quantile$dataset)) {
 # Figure 4: Empirical FDR metrics
 ```{r}
 # masked synonymous empirical FDR
-source("../../src/plot_func.R")
-source("../../src/methods/diagnostics.R")
+source("../src/plot_func.R")
+source("../src/methods/diagnostics.R")
 datasets <- c("oct1_rescaled_masked", "kir21_Surface_abundance_rescaled_masked", "gpcr_ph55_rescaled_masked", "kir21_Abundance_rescaled_masked")
 # get sig cutoff df from yaml + param setting
 for (dataset in datasets) {
@@ -262,8 +262,8 @@ ggsave(paste0("empirical_figures/syn_box_summarized.png"), p, height=4, width=12
 
 
 ```{r}
-source("../../src/plot_func.R")
-source("../../src/methods/diagnostics.R")
+source("../src/plot_func.R")
+source("../src/methods/diagnostics.R")
 # AlphaMissense ROC curves
 datasets <- c("oct1_rescaled", "Kir21_surface_abundance_rescaled", "gpcr_ph55_rescaled", "Kir21_Abundance_rescaled", "pten_dropNA", "tpmt_dropNA", "p2ry8_surf_rescaled")
 # datasets <- c("oct1_rescaled", "Kir21_surface_abundance_rescaled", "gpcr_ph55_rescaled", "Kir21_Abundance_rescaled", "pten_dropNA", "tpmt_dropNA")
@@ -385,8 +385,8 @@ ggsave(paste0("empirical_figures/am_box_p2ry8.png"), p, height=3, width=12)
 ## clinvar empirical plots
 ```{r}
 library(Biostrings)
-source("../../src/plot_func.R")
-source("../../src/methods/diagnostics.R")
+source("../src/plot_func.R")
+source("../src/methods/diagnostics.R")
 # AlphaMissense ROC curves
 datasets <- c("oct1_rescaled", "Kir21_surface_abundance_rescaled", "gpcr_ph55_rescaled", "Kir21_Abundance_rescaled", "pten_dropNA", "tpmt_dropNA")
 gene_names <- c("SLC22A1", "KCNJ2", "GPR68", "KCNJ2", "PTEN", "TPMT")
@@ -456,8 +456,8 @@ ggsave("empirical_figures/clinvar_sens.png", p_FNR, height=4, width=8)
 
 ## nonsense empirical FNR plots
 ```{r}
-source("../../src/plot_func.R")
-source("../../src/methods/diagnostics.R")
+source("../src/plot_func.R")
+source("../src/methods/diagnostics.R")
 # nonsense mutation plot
 datasets <- c("pten_dropNA", "tpmt_dropNA")
 total_FNR_df <- c()

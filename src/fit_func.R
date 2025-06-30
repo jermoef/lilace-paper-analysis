@@ -56,7 +56,7 @@ fit_baseline <- function(obs_df, model_file, baseline_file, G_size=100, breaks=N
     return(stanfit)
 }
 
-fit_overall <- function(obs_df, baseline_file, model_file, 
+fit_overall <- function(obs_df, model_file, 
                         stanfit_file, res_file, input_file, G_size=100, selfphi=NULL,
                         seed=NULL, noinit=F) {
     pseudocount <- T # use pseudocount
@@ -65,17 +65,6 @@ fit_overall <- function(obs_df, baseline_file, model_file,
       data_exp  <- data_exp %>% mutate(across(starts_with("c_"), ~ .x + 1))
     }
     
-    param <- read_tsv(baseline_file)
-    q <- param[startsWith(param$param, "q"),2][[1]]
-    # ensure valid simplex bc numerical precision stuff
-    q <- q/sum(q)
-    print(q)
-    if (is.null(selfphi)) {
-      phi <- param[startsWith(param$param, "phi"),2][[1]]
-    } else {
-      phi <- selfphi
-    }
-
     V <- length(unique(data_exp$hgvs_exp))
     N <- nrow(data_exp)
     nMAPv <- as.numeric(factor(data_exp$hgvs_exp))
@@ -156,19 +145,19 @@ fit_overall <- function(obs_df, baseline_file, model_file,
     init <- 1
     if (basename(model_file) == "FACS_double_sample_repq.stan") {
       input <- list(V = V, S = S, N = N, N_syn=N_syn, P=P, R=R, nMAPv = nMAPv, vMAPs = vMAPs, nMAPr = nMAPr, vMAPp = vMAPp, sMAPr=sMAPr, 
-                n_counts=n_counts, n_syn_counts=n_syn_counts, K = K, y = y, y_syn = y_syn, q = q, phi_q = phi)
+                n_counts=n_counts, n_syn_counts=n_syn_counts, K = K, y = y, y_syn = y_syn)
       init <- list(list(sigma=rep(1, P-1)), list(sigma=rep(1, P-1)), list(sigma=rep(1, P-1)), list(sigma=rep(1, P-1)))
     } else if (basename(model_file) == "FACS_double_sample_repq_nopos.stan") {
       input <- list(V = V, S = S, N = N, N_syn=N_syn, P=P, R=R, nMAPv = nMAPv, vMAPs = vMAPs, nMAPr = nMAPr, vMAPp = vMAPp, sMAPr=sMAPr, 
-                n_counts=n_counts, n_syn_counts=n_syn_counts, K = K, y = y, y_syn = y_syn, q = q, phi_q = phi)
+                n_counts=n_counts, n_syn_counts=n_syn_counts, K = K, y = y, y_syn = y_syn)
       init <- list(list(sigma=rep(1, V)), list(sigma=rep(1, V)), list(sigma=rep(1, V)), list(sigma=rep(1, V)))
     } else if (basename(model_file) == "FACS_double_sample_count_grouped.stan") {
       input <- list(V = V, S = S, N = N, N_syn=N_syn, P=P, R=R, G=G, nMAPv = nMAPv, vMAPs = vMAPs, nMAPg = nMAPg, nMAPr = nMAPr, vMAPp = vMAPp, sMAPr=sMAPr, sMAPg=sMAPg,
-                n_counts=n_counts, n_syn_counts=n_syn_counts, K = K, y = y, y_syn = y_syn, q = q, phi_q = phi)
+                n_counts=n_counts, n_syn_counts=n_syn_counts, K = K, y = y, y_syn = y_syn)
       init <- list(list(sigma=rep(1, P-1)), list(sigma=rep(1, P-1)), list(sigma=rep(1, P-1)), list(sigma=rep(1, P-1)))
     } else {
       input <- list(V = V, N = N, C = C, nMAPv = nMAPv, vMAPc = vMAPc,
-                K = K, y = y, phi = phi, q = q)
+                K = K, y = y)
     }
     if (noinit) {
       init <- NULL

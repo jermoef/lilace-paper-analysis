@@ -1,5 +1,5 @@
 functions {
-  real dirichlet_multinomial_lpmf(array[] int y, vector alpha) {
+  real my_dirichlet_multinomial_lpmf(array[] int y, vector alpha) {
     real alpha_0 = sum(alpha);
     real n = sum(y);
     return lgamma(alpha_0) - lgamma(n + alpha_0) + 
@@ -19,6 +19,6 @@ parameters {
 model { 
   phi ~ exponential(0.1);
   for (n in 1:N) {
-    y[n] ~ dirichlet_multinomial(phi*q);
+    y[n] ~ my_dirichlet_multinomial(phi*q);
   }
 }

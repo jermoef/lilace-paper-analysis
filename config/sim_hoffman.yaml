@@ -1,3 +1,37 @@
+# sim_input_dir: "input/data"
+# sim_res_dir: "results/sim"
+# input_dir: "results/sim/sim_data"
+# res_dir: "results/sim/sim_results"
+# scratch_dir: "/u/scratch/j/jfreuden"
+
+# n_iter: 10
+
+# n_pos_vals: [100]
+# params: ["none", "effect_prop", "measurement_variance", "cell_count_factor", "variant_phi", "reads_per_obs", "bin_phi", "n_bins", "gate_offset", "prop_small", "rep_effect", "n_replicates"]
+
+# param_vals: [[0], 
+#   [0.1, 0.3, 0.8], # effect prop
+#   [0.1, 0.3, 1], # measurement variance
+#   [10, 25, 50, 100, 200], # cell count factor
+#   [1, 5, 10, 100, 1000], # variant phi
+#   [50, 100, 500, 1000], # reads per obs
+#   [500, 3500, 15000, 100000], # bins phi
+#   [2, 3, 4, 8], # num bins
+#   [0.3, 1, 2, 3], # gates offset from 25% quantiles on log normal scale 
+#   [0.3, 0.8, 1], # prop small effects
+#   [0.5, 1, 2], # rep effect
+#   [1, 2, 3]] # num replicates
+
+# # params: ["none"]
+# # param_vals: [[0]]
+
+# datasets: ['oct1_rescaled', 'Kir21_surface_abundance_rescaled']
+# models: ['FACS_double_sample_repq']
+# methods: ['enrich2', 'ML', 'MoM', 'weight_mean']
+
+# SHELL: "bash"
+# RCFILE: ".bashrc"
+
 sim_input_dir: "input/data"
 sim_res_dir: "results/sim"
 input_dir: "results/sim/sim_data"
@@ -7,20 +41,23 @@ scratch_dir: "/u/scratch/j/jfreuden"
 n_iter: 10
 
 n_pos_vals: [100]
-params: ["none", "effect_prop", "measurement_variance", "cell_count_factor", "variant_phi", "reads_per_obs", "bin_phi", "n_bins", "gate_offset", "prop_small", "rep_effect", "n_replicates"]
+# params: ["none", "effect_prop", "measurement_variance", "cell_count_factor", "variant_phi", "reads_per_obs", "bin_phi", "n_bins", "gate_offset", "prop_small", "rep_effect", "n_replicates"]
 
-param_vals: [[0], 
-  [0.1, 0.3, 0.8], # effect prop
-  [0.1, 0.3, 1], # measurement variance
-  [10, 25, 50, 100, 200], # cell count factor
-  [1, 5, 10, 100, 1000], # variant phi
-  [50, 100, 500, 1000], # reads per obs
-  [500, 3500, 15000, 100000], # bins phi
-  [2, 3, 4, 8], # num bins
-  [0.3, 1, 2, 3], # gates offset from 25% quantiles on log normal scale 
-  [0.3, 0.8, 1], # prop small effects
-  [0.5, 1, 2], # rep effect
-  [1, 2, 3]] # num replicates
+# param_vals: [[0], 
+#   [0.1, 0.3, 0.8], # effect prop
+#   [0.1, 0.3, 1], # measurement variance
+#   [10, 25, 50, 100, 200], # cell count factor
+#   [1, 5, 10, 100, 1000], # variant phi
+#   [50, 100, 500, 1000], # reads per obs
+#   [500, 3500, 15000, 100000], # bins phi
+#   [2, 3, 4, 8], # num bins
+#   [0.3, 1, 2, 3], # gates offset from 25% quantiles on log normal scale 
+#   [0.3, 0.8, 1], # prop small effects
+#   [0.5, 1, 2], # rep effect
+#   [1, 2, 3]] # num replicates
+
+params: ["none", "gate_offset"]
+param_vals: [[0], [0.3, 1, 2, 3]]
 
 # params: ["none"]
 # param_vals: [[0]]
@@ -29,5 +66,6 @@ datasets: ['oct1_rescaled', 'Kir21_surface_abundance_rescaled']
 models: ['FACS_double_sample_repq']
 methods: ['enrich2', 'ML', 'MoM', 'weight_mean']
 
+selfphi: False
 SHELL: "bash"
 RCFILE: ".bashrc"

@@ -1,0 +1,21 @@
+
+selfphi: True # use own synonymous as phi estimate instead of baseline
+input_dir: "input/data"
+res_dir: "results/data"
+scratch_dir: "/u/scratch/j/jfreuden"
+
+
+# paper datasets
+datasets: ['oct1_rescaled', 'Kir21_Abundance_rescaled', 'Kir21_surface_abundance_rescaled', 'gpcr_ph55_rescaled',
+           'pten_dropNA', 'tpmt_dropNA', 'p2ry8_surf_rescaled']
+baselines: [['oct1_rescaled'], ['Kir21_Abundance_rescaled'], ['Kir21_surface_abundance_rescaled'], ['gpcr_ph55_rescaled'],
+            ['pten_dropNA'], ['tpmt_dropNA'], ['p2ry8_surf_rescaled']]
+
+models: ['FACS_double_sample_repq']
+methods: ['enrich2', 'ML', 'MoM', 'weight_mean']
+
+prop_masked: [0.2]
+n_masked_iter: 10
+
+SHELL: "bash"
+RCFILE: ".bashrc"

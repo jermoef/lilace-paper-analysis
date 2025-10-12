@@ -4,6 +4,126 @@ knitr::opts_knit$set(root.dir = "/Users/jerome/DocuLocal/DMS/lilace-paper-analys
 library(dplyr)
 ```
 
+
+## Formatting functions
+```{r}
+format_enrich_counts <- function(file, outfile) {
+  data_raw <- read_tsv(file, skip = 4, col_names = FALSE)
+  title <- read_tsv(file, n_max = 3, col_names = FALSE)
+  colnames(data_raw) <- as.character(apply(as.matrix(title), 2, str_c, collapse = "."))
+  colnames(data_raw)[1] <- "hgvs"
+  rm(title)
+  
+  data <- data_raw %>%
+    pivot_longer(!hgvs) %>%
+    separate(name, into = c("exp", "rep", "time"), sep = "[.]") %>%
+    separate(rep, into = c("exp2", "rep"), sep = -2) %>%
+    select(-exp2) %>%
+    pivot_wider(names_from = time, values_from = value)
+  
+  data <- data %>% filter(hgvs != "_wt")
+  
+  data <- data %>%
+    mutate(
+      hgvs2 = substr(hgvs, 4, nchar(hgvs) - 1),
+      position = gsub("\\_.*", "", hgvs2),
+      position = as.numeric(gsub("[[:alpha:]]", "", position)),
+      wildtype = substr(hgvs2, 1, 1),
+      hgvs2 = substr(hgvs2, 2, nchar(hgvs2))
+    ) %>% 
+    separate(hgvs2, sep = "[_]", into = c("a1", "a2"), remove = FALSE) %>% 
+    mutate(mutation = ifelse(is.na(a2), gsub("[[:digit:]]", "", hgvs2), NA)) %>% 
+    mutate(a1 =  as.numeric(gsub("[[:alpha:]]", "", a1)),
+           a2 = as.numeric(gsub("[[:alpha:]]", "", a2)), 
+           a = a2 - a1, a = ifelse(is.na(a), 0, a)) %>% 
+    mutate(mutation = ifelse(str_detect(hgvs, "del"), paste("del", a, sep = ""), mutation)) %>%
+    select(-a, -a1, -a2) %>% 
+    mutate(ins = gsub(".*ins", "", hgvs2),
+           mutation = ifelse(str_detect(hgvs, "ins"), paste("ins", nchar(ins)-1, sep = ""), mutation)) %>%
+    select(-ins, -hgvs2)
+  
+  
+  func_map <- function(wt, mut) {
+    if (wt == mut) {
+      return("synonymous")
+    } else if (str_detect(mut, "del")) {
+      return("deletion")
+    } else if (str_detect(mut, "ins")) {
+      return("insertion")
+    } else {
+      return("missense")
+    }
+  }
+  
+  print(head(data))
+  data <- data %>%
+    rowwise() %>%
+    mutate(type = func_map(wildtype, mutation)) %>%
+    ungroup() %>%
+    arrange(position) %>%
+    dplyr::select(hgvs, position, wildtype, mutation, type, starts_with("c_"), exp, rep)
+    # dplyr::select(1, all_of(8:11), all_of(4:7), all_of(2:3))
+  
+  write_tsv(data, file = outfile)
+  return(data)
+}
+
+# format reprocessed datasets from enrich format
+format_phenotype_from_enrich <- function(data_file, protein, pheno, FACS_percent=NULL, rep_specific_FACS_percent=F, remove_reps=c()) {
+  data <- format_enrich_counts(data_file, 
+                             paste0("datasets/reprocessed_datasets/", protein, "/results/counts_cleaned.tsv"))
+  data_exp <- data %>% 
+              unite("hgvs_exp", hgvs, exp, remove = FALSE) %>% 
+              filter(exp==pheno) %>% 
+              select(where(function(x) any(!is.na(x)))) %>%
+              drop_na()
+  data_exp <- data_exp[!(data_exp$rep %in% remove_reps),]
+  K <- sum(startsWith(colnames(data_exp), "c_"))
+  print(paste0("Before filter: ", pheno, " ", nrow(data_exp)))
+  
+  # rescale
+  if (!rep_specific_FACS_percent & !is.null(FACS_percent)) {
+    FACS_percent <- FACS_percent / sum(FACS_percent) # normalize to actual percents
+  }
+  if (!is.null(FACS_percent)) {
+    print("Rescaling")
+    if (protein=="MOR") {
+      rep_set <- paste0("R", 1:3)
+    } else {
+      rep_set <- unique(data_exp$rep)
+    }
+    for (rep in rep_set) {
+      rep_total <- sum(data_exp[data_exp$rep==rep,paste0("c_", (1:K)-1)])
+      for (i in 1:K) {
+        bin <- paste0("c_", 0:(K-1))[i]
+        if (rep_specific_FACS_percent) {
+          print(FACS_percent[[rep]])
+          rescaled_bin_total <- (FACS_percent[[rep]] / sum(FACS_percent[[rep]])) * rep_total
+        } else {
+          rescaled_bin_total <- FACS_percent * rep_total
+        }
+        data_exp[data_exp$rep==rep,][[bin]] <- ceiling(data_exp[data_exp$rep==rep,][[bin]] / sum(data_exp[data_exp$rep==rep,][[bin]]) * rescaled_bin_total[i])
+      }
+    }
+  }
+  
+  # add n counts
+  data_exp$n_counts <- apply(data_exp %>% select(starts_with("c_")), 1, sum)
+  data_exp <- data_exp %>% group_by(hgvs_exp) %>% mutate(total_counts=sum(n_counts))
+  data_exp <- data_exp[data_exp$total_counts>=15,]
+  print(paste0("After filter: ", pheno, " ", nrow(data_exp)))
+  if (!is.null(FACS_percent)) {
+    print("Saving rescaled")
+    saveRDS(data_exp, paste0("workflow/input/data/", protein, "_", pheno, "_rescaled.RData"))
+  } else {
+    print("Saving raw")
+    saveRDS(data_exp, paste0("workflow/input/data/", protein, "_", pheno, ".RData"))
+  }
+  return(data_exp)
+}
+
+```
+
 ## GPR68
 ```{r}
 data <- read_tsv(file = "datasets/gpr68_counts_cleaned.tsv")
@@ -201,6 +321,20 @@ for (pheno in c("Abundance", "Surface")) {
   print(nrow(data_exp_masked))
   saveRDS(data_exp_masked, paste0("workflow/input/data/Kir21_", pheno, "_rescaled_masked.RData"))
 }
+```
+
+```{r}
+# Kir21
+data_file <- "../sim-DMS-FACS/datasets/reprocessed_datasets/Kir21/results/kir21/enrich/tsv/kir21_exp/main_identifiers_counts.tsv"
+# 051022_kir21_indel_abundance/05122_NG_only_10052022135032.pdf
+data_exp <- format_phenotype_from_enrich(data_file, "Kir21", "abundance", c(171, 215, 221, 183) / sum(c(171, 215, 221, 183))) # evts / sec
+# no rescaling 
+# data_exp <- format_phenotype_from_enrich(data_file, "Kir21", "abundance")
+# 051022_kir21_indel_surface/05122_Surface_10052022135016.pdf
+data_exp <- format_phenotype_from_enrich(data_file, "Kir21", "surface", c(0.316, 0.211, 0.299, 0.093))
+# 051022_kir21_indel_surface(abundance_cells)/05122_NG_surface_10052022135024.pdf
+data_exp <- format_phenotype_from_enrich(data_file, "Kir21", "surface_abundance", c(417, 381, 506, 492) / sum(c(417, 381, 506, 492))) # evts / sec
+
 ```
 
 ## OCT1
@@ -467,8 +601,27 @@ saveRDS(data_exp, paste0("workflow/input/data/p2ry8_surf_rescaled.RData"))
 ```
 
 
+## Save FACS traces to yaml
+```{r}
+datasets <- c("oct1", "Kir21_Abundance", "Kir21_surface_abundance", "gpcr_ph55", "p2ry8")
+sort_props <- list(
+  oct1 = c(0.251, 0.242, 0.247, 0.226),
+  Kir21_Abundance = c(171, 215, 221, 183) / sum(c(171, 215, 221, 183)),
+  Kir21_surface_abundance = c(417, 381, 506, 492) / sum(c(417, 381, 506, 492)),
+  gpcr_ph55 = c(0.2184, 0.1972, 0.1869, 0.1236),
+  p2ry8 = c(0.2, 0.3, 0.3, 0.2)
+)
 
-
+for (dataset in datasets) {
+  yamls <- c(paste0("workflow/input/data/", dataset, ".yaml"), paste0("workflow/input/data/", dataset, "_rescaled.yaml"))
+  for (yaml_filename in yamls) {
+    yaml_file <- yaml::read_yaml(yaml_filename)
+    yaml_file$sort_props <- sort_props[[dataset]]
+    print(yaml_file)
+    yaml::write_yaml(yaml_file, yaml_filename)
+  }
+}
+```
 
 
 

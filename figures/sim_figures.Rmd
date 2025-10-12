@@ -7,30 +7,37 @@ output: pdf_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-
+getwd()
 ```
 
 # Main figures
 ```{r}
-source("../src/methods/diagnostics.R")
-source("../src/plot_func.R")
-yaml <- yaml::read_yaml("../config/sim_hoffman.yaml")
-res_dir <- "../workflow/results/sim"
-plot_dir <- "sim_figures"
+source("../../src/methods/diagnostics.R")
+source("../../src/plot_func.R")
+yaml <- yaml::read_yaml("../../config/sim_hoffman.yaml")
+res_dir <- "../../hoffman_output/sim_res/sim"
+plot_dir <- "sim_figures/100pos_new"
+# plot_dir <- "sim_figures/other_models"
 sim_model_stats <- get_sim_model_stats(yaml, res_dir)
 
-
-FDR_df_raw <- get_FDR_df(yaml, res_dir)
+# FDR_df_raw <- get_FDR_df(yaml, res_dir)
+FDR_df_raw <- readRDS("FDR_df_raw_w_nopos.RData")
 FDR_df_raw <- unique(FDR_df_raw)
 FDR_df <- rename_methods(FDR_df_raw)
 FDR_df <- rename_params(FDR_df)
-
 # cross-parameter plots + default plot
-FDR_df <- FDR_df[FDR_df$method != "mean bin\nnorm approx" &
-                 FDR_df$method != "ML\nnorm approx" & 
-                 FDR_df$method != "FACS_double_sample_nopos_mu_mean" &
-                 FDR_df$method != "FACS_double_sample_repq_mu_mean" &
-                 FDR_df$method != "FACS_double_sample_syn_shrinkage_mu_mean",]
+# FDR_df <- FDR_df[FDR_df$method != "mean bin\nnorm approx" &
+#                  FDR_df$method != "ML\nnorm approx" & 
+#                  FDR_df$method != "FACS_double_sample_nopos_mu_mean" &
+#                  FDR_df$method != "FACS_double_sample_repq_mu_mean" &
+#                  FDR_df$method != "FACS_double_sample_syn_shrinkage_mu_mean",]
+
+
+FDR_df <- FDR_df[FDR_df$method == "Lilace" |
+                 FDR_df$method == "mean bin\nBH" |
+                 FDR_df$method == "mean bin\n2sd" |
+                 FDR_df$method == "enrich2\n2sd" |
+                 FDR_df$method == "enrich2\np-value",]
 
 # FDR_df <- FDR_df[FDR_df$method != "mean bin\nnorm approx" &
 #                  FDR_df$method != "ML\nnorm approx" & 
@@ -39,21 +46,48 @@ FDR_df <- FDR_df[FDR_df$method != "mean bin\nnorm approx" &
 #                  FDR_df$method != "FACS_double_sample_syn_shrinkage_mu_mean",]
 
 FDR_df <- FDR_df[!(FDR_df$param == "Gate Offset" & FDR_df$param_val == 2),]
-make_FDR_plots(yaml, FDR_df[FDR_df$method != "Lilace\n(unrecalibrated)",], paste0(plot_dir, "/FDR"))
-make_FDR_plots(yaml, FDR_df, paste0(plot_dir, "/FDR+unrecalibrated"), axis_text_size=14)
+# make_FDR_plots(yaml, FDR_df[FDR_df$method != "Lilace\n(unrecalibrated)",], paste0(plot_dir, "/FDR"))
+# make_FDR_plots(yaml, FDR_df, paste0(plot_dir, "/FDR+unrecalibrated"), axis_text_size=14)
+source("../../src/plot_func.R")
+make_FDR_plots(yaml, FDR_df, paste0(plot_dir, "/FDR"), axis_text_size=18, filter_methods=T, dot_size=1)
+# make_FDR_plots(yaml, FDR_df, paste0(plot_dir, "/FDR+unrecalibrated"), axis_text_size=14, filter_methods=F, dot_size=0.5)
+
 # make_FDR_plots(yaml, FDR_df[FDR_df$method != "Lilace\n(unrecalibrated)",], paste0(plot_dir, "/FDR"), axis_text_size=10, filter_methods=F)
 # make_FDR_plots(yaml, FDR_df, paste0(plot_dir, "/FDR+unrecalibrated"), axis_text_size=10, filter_methods=F)
 
 FDR_df_full <- rename_methods(FDR_df_raw)
 FDR_df_full <- rename_params(FDR_df_full)
 source("../../src/plot_func.R")
-make_FDR_plots(yaml, FDR_df_full, paste0(plot_dir, "/FDR+all"), axis_text_size=11)
+# make_FDR_plots(yaml, FDR_df_full, paste0(plot_dir, "/FDR+all"), axis_text_size=11)
+FDR_df_lilace <- FDR_df_full %>% filter(grepl("Lilace", method, ignore.case = TRUE)) %>% filter(!grepl("unrecal", method, ignore.case = TRUE))
+make_FDR_plots(yaml, FDR_df_lilace, paste0(plot_dir, "/FDR+VI"), axis_text_size=10, filter_methods=F, dot_size=1, only_lilace=T)
 
-cor_df_raw <- get_cor_df(yaml, res_dir)
-cor_df <- rename_methods(cor_df_raw)
-cor_df <- rename_params(cor_df)
+FDR_df_full <- FDR_df_full[FDR_df_full$method %in% c("Lilace", "Lilace\n(unrecal)", 
+                                                                            "mean bin\nBH", "mean bin\n2sd", "mean bin\nfishers",  "mean bin\nsimes", 
+                                                                            "mean bin\nt-test",
+                                                                            "ML\nBH", "ML\n2sd", "ML\nfishers", "ML\nsimes",
+                                                                            "ML\nt-test", "enrich2\n2sd", "enrich2\np-value"
+                                                                            ),]
 source("../../src/plot_func.R")
-make_cor_plots(yaml, cor_df_raw, paste0(plot_dir, "/corr"))
+make_FDR_plots(yaml, FDR_df_full, paste0(plot_dir, "/FDR+all+BH"), axis_text_size=11, filter_methods=F, width=25)
+
+source("../../src/methods/diagnostics.R")
+cor_df_raw <- get_cor_df(yaml, res_dir)
+cor_df <- cor_df_raw[cor_df_raw$method == "FACS_double_sample_repq_syn_recalibrated_mu_mean" |
+                 cor_df_raw$method == "weight_effect_mean" |
+                 cor_df_raw$method == "lilace_VI_multivariate_normal_mu_mean" |  
+                 cor_df_raw$method == "ML_effect_mean" |  
+                 cor_df_raw$method == "enrich_score",]
+cor_df[cor_df$method=="FACS_double_sample_repq_syn_recalibrated_mu_mean",]$method = "Lilace"
+cor_df[cor_df$method=="weight_effect_mean",]$method = "Mean Bin"
+cor_df[cor_df$method=="lilace_VI_multivariate_normal_mu_mean",]$method = "Lilace\nVI (MV)"
+cor_df[cor_df$method=="ML_effect_mean",]$method = "ML"
+cor_df[cor_df$method=="enrich_score",]$method = "Enrich2"
+cor_df <- rename_params(cor_df)
+# cor_summary <- cor_df %>% group_by(method, param, param_val) %>% summarize(avg_cor=mean(corr), sd_cor=sd(corr))
+source("../../src/plot_func.R")
+make_cor_plots(yaml, cor_df, paste0(plot_dir, "/corr"), use_rank=F)
+make_cor_plots(yaml, cor_df, paste0(plot_dir, "/rank_corr"), use_rank=T)
 
 # fit_df <- readRDS("../../hoffman_output/sim_res/sim/sim_results/sim_oct1_rescaled_200pos_none_0_0_rescaled/baseline_sim_oct1_rescaled_200pos_none_0_0_rescaled/fitted_df.RData")
 # # fit_df <- readRDS("../../hoffman_output/sim_res/sim/sim_results/sim_Kir21_surface_abundance_rescaled_200pos_gate_offset_3_2_rescaled/baseline_sim_Kir21_surface_abundance_rescaled_200pos_gate_offset_3_2_rescaled/fitted_df.RData")
@@ -101,34 +135,33 @@ make_cor_plots(yaml, cor_df_raw, paste0(plot_dir, "/corr"))
 # rank_FDR_df <- rank_FDR_df[rank_FDR_df$method != "ML_effect_mean" & rank_FDR_df$method != "weighted average", ]
 # make_rank_FDR_plots(yaml, rank_FDR_df, plot_dir)
 
-# sig-based default comparison
-param <- "none"
-param_val <- "0"
-sig_FDR_df <- get_sig_FDR_df(yaml, res_dir, param, param_val)
-sig_FDR_df <- rename_methods(sig_FDR_df)
-sig_FDR_df_filtered <- sig_FDR_df[sig_FDR_df$method != "Lilace\n(unrecalibrated)" &
-                                  sig_FDR_df$method != "mean bin" &
-                                  sig_FDR_df$method != "ML_effect_mean",]
-source("../src/plot_func.R")
-make_cross_sig_plots(yaml, sig_FDR_df_filtered, plot_dir)
+
 
 # large effect FNR plots
-effect_quantile <- 0.5
-FDR_df_quantile <- get_FDR_df(yaml, res_dir, effect_quantile=effect_quantile)
+quantile_yaml <- yaml
+quantile_yaml$params <- "none"
+quantile_yaml$param_vals <- list(0)
+quantile_yaml$params <- "variant_phi"
+quantile_yaml$param_vals <- list(5)
+effect_quantile <- 0
+FDR_df_quantile_raw <- get_FDR_df(quantile_yaml, res_dir, effect_quantile=effect_quantile)
+FDR_df_quantile <- FDR_df_quantile_raw
+print(FDR_df_quantile[FDR_df_quantile$method=="weight_effect_mean_syn_sd_BH",] %>% unique() %>% group_by(dataset) %>% summarize(mean_FDR=mean(FDR), mean_sens=mean(sens)))
 
 for (dataset in unique(FDR_df_quantile$dataset)) {
   FDR_df_summary_quantile <- FDR_df_quantile[FDR_df_quantile$dataset == dataset & FDR_df_quantile$param=="none",]
   FDR_df_summary_quantile <- FDR_df_summary_quantile %>% group_by(param_val, method) %>% summarize(mean_FDR = mean(FDR), mean_sens = mean(1-FNR), mean_FPR = mean(FPR),
                                                                                   sd_FDR = sd(FDR), sd_sens = sd(1-FNR), sd_FPR = sd(FPR))
   FDR_df_summary_quantile <- rename_methods(FDR_df_summary_quantile)
-  FDR_df_summary_quantile <- FDR_df_summary_quantile[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|enrich2", FDR_df_summary_quantile$method),]
-  FDR_df_summary_quantile$sample_ord <- factor(FDR_df_summary_quantile$method, levels = c("Lilace", "Lilace\n(unrecalibrated)", "ML\n2sd", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+  FDR_df_summary_quantile <- FDR_df_summary_quantile[grepl("\\<Lilace\\>|mean\ bin\nBH|mean\ bin\n2sd|enrich2", FDR_df_summary_quantile$method),]
+  FDR_df_summary_quantile$sample_ord <- factor(FDR_df_summary_quantile$method, levels = c("Lilace", "mean bin\nBH", "ML\n2sd", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+  FDR_df_summary_quantile <- FDR_df_summary_quantile[!is.na(FDR_df_summary_quantile$sample_ord),]
   
   print(FDR_df_summary_quantile)
-  p_FNR <- ggplot(FDR_df_summary_quantile, aes(x=sample_ord, y=mean_sens)) + 
+  p_FNR <- ggplot(FDR_df_summary_quantile, aes(x=sample_ord, y=mean_sens)) +
                geom_pointrange(aes(ymin = mean_sens - sd_sens, ymax = mean_sens + sd_sens), color="orange") +
-                # geom_boxplot(width = 0.5, position = position_dodge(0.6), fill="orange") + 
-                expand_limits(y=0) + 
+                # geom_boxplot(width = 0.5, position = position_dodge(0.6), fill="orange") +
+                expand_limits(y=0) +
                 theme_cowplot() + xlab("method") + ylab("Sensitivity")
   print(p_FNR)
   if (!dir.exists(paste0("sim_figures/FDR_effect_", effect_quantile))) {
@@ -146,11 +179,125 @@ for (dataset in unique(FDR_df_quantile$dataset)) {
 
 ```
 
+## Visualize metrics by subset
+```{r}
+source("../../src/methods/diagnostics.R")
+source("../../src/plot_func.R")
+yaml <- yaml::read_yaml("../../config/sim_hoffman.yaml")
+res_dir <- "../../hoffman_output/sim_res/sim"
+plot_dir <- "sim_figures/100pos_new"
+# plot_dir <- "sim_figures/other_models"
+# sim_model_stats <- get_sim_model_stats(yaml, res_dir)
+# FDR_df_raw <- get_FDR_df(yaml, res_dir)
+param <- "none"
+param_val <- 0
+
+df_list <- make_FDR_by_subset_dfs(yaml, res_dir, param, param_val, probs=c(0.1, 0.2, 0.3, 0.4, 0.5, 1))
+source("../../src/plot_func.R")
+make_FDR_by_subset_plots(df_list, plot_dir, axis_text_size=18)
+```
+
+
+## Scatter plot w/ simulation + rank-based metrics
+```{r}
+# make default sim scatter for iter 0 for 3 methods
+source("../../src/plot_func.R")
+make_sim_scatter(yaml, res_dir, plot_dir, "none", 0, 0)
+make_sim_scatter(yaml, res_dir, plot_dir, "bin_phi", 500, 0)
+# 
+
+```
+
+## auPRC + FDR-sens plots
+```{r}
+source("../../src/plot_func.R")
+source("../../src/diagnostics.R")
+# FDR-sens plots
+param <- "none"
+param_val <- "0"
+sig_FDR_df <- get_sig_FDR_df(yaml, res_dir, param, param_val)
+sig_FDR_df <- rename_methods(sig_FDR_df)
+sig_FDR_df_filtered <- sig_FDR_df[sig_FDR_df$method != "Lilace\n(unrecalibrated)" &
+                                  sig_FDR_df$method != "mean bin" &
+                                  sig_FDR_df$method != "ML_effect_mean" &
+                                  sig_FDR_df$method != "mean bin\nnorm approx" &
+                                  sig_FDR_df$method != "ML\nnorm approx",]
+
+make_cross_sig_plots(yaml, sig_FDR_df_filtered, paste0(plot_dir, "/BH"))
+
+
+# auPRC plots
+# default sim PRC curve + auPRC bar plot
+library(DescTools)
+# source("../../src/plot_func.R")
+# prc_df <- make_prc_curve_df(yaml, res_dir, plot_dir, param, param_val, c_thresh=0.95, effect_quantile=0)
+source("../../src/diagnostics.R")
+# prc_df <- get_prc_df(yaml, res_dir, param, param_val)
+prc_df_raw <- readRDS("prc_df.RData")
+colnames(prc_df_raw) <- c("dataset", "n_pos", "iter", "method", "rank", "recall", "precision")
+prc_df <- rename_methods(data.frame(prc_df_raw))
+prc_df$rank <- as.numeric(prc_df$rank)
+for (dataset in unique(prc_df$dataset)) {
+  prc_summary <- prc_df[prc_df$dataset==dataset,] %>% group_by(method, rank) %>% summarize(mean_recall=mean(as.numeric(recall)), mean_precision=mean(as.numeric(precision)))
+  prc_summary <- prc_summary[prc_summary$method != "mean bin\n2sd",]
+  # add a 0,1 point for each method
+  for (method in unique(prc_summary$method)) {
+    prc_summary <- rbind(prc_summary, data.frame(method=method, rank=0, mean_recall=0, mean_precision=1))
+  }
+  prc_summary$method <- factor(prc_summary$method, levels=c("enrich2\np-value", "enrich2\n2sd", "ML\n2sd BH", "mean bin\nBH", "Lilace VI (MV)", "Lilace"))
+  # prc_summary$method <- factor(prc_summary$method, levels=c("Lilace", "Lilace VI (MV)", "mean bin\nBH", "ML\n2sd BH", "enrich2\n2sd", "enrich2\np-value"))
+  p <- ggplot(prc_summary, aes(x=mean_recall, y=mean_precision, color=method)) + geom_line(lwd=1) + theme_cowplot() +
+    scale_color_manual(values=c("#E69F00", "#0072B2", "#D55E00", "#009E73", "#CC79A7", "#56B4E9", "#F0E442", "#505050"),
+                       breaks=c("Lilace", "Lilace VI (MV)", "mean bin\nBH", "ML\n2sd BH", "enrich2\n2sd", "enrich2\np-value")) +
+    xlab("Mean Recall") + ylab("Mean Precision")
+  print(p)
+  ggsave(paste0(plot_dir, "/", dataset, "_prc_curve.png"), p, height = 4, width=8)
+}
+
+auprc_df <- c()
+for (dataset in unique(prc_df$dataset)) {
+  for (iter in unique(prc_df$iter)) {
+    for (method in unique(prc_df$method)) {
+      au_df <- prc_df[prc_df$dataset == dataset & prc_df$method == method & prc_df$iter == iter,]
+      if (nrow(au_df) < 1000) {
+        print(paste(dataset, iter, method, nrow(au_df)))
+      }
+      else {
+        au_df <- rbind(au_df, data.frame(dataset=dataset, n_pos=100, iter=iter, method=method, rank=0, recall=0, precision=1))
+        auprc <- AUC(as.numeric(au_df$recall), as.numeric(au_df$precision), method="spline")
+        avg_prec <- mean(as.numeric(au_df$precision))
+        auprc_df <- rbind(auprc_df, c(dataset, iter, method, auprc, avg_prec))
+      }
+    }
+  }
+}
+auprc_df <- data.frame(auprc_df)
+colnames(auprc_df) <- c("dataset", "iter", "method", "auprc", "avg_prec")
+auprc_df$auprc <- as.numeric(auprc_df$auprc)
+auprc_df$avg_prec <- as.numeric(auprc_df$avg_prec)
+auprc_df <- auprc_df[auprc_df$method != "mean bin\n2sd",]
+auprc_df$method <- factor(auprc_df$method, levels=c("Lilace", "Lilace VI (MV)", "mean bin\nBH", "ML\n2sd BH", "enrich2\n2sd", "enrich2\np-value"))
+for (dataset in unique(auprc_df$dataset)) {
+  auprc_df_summary <- auprc_df[auprc_df$dataset==dataset,] %>% group_by(method) %>% summarize(mean_auprc=mean(auprc), sd_auprc=sd(auprc), mean_avg_prec=mean(avg_prec), sd_avg_prec=sd(avg_prec))
+  p <- ggplot(auprc_df_summary, aes(x=method, y=mean_auprc, fill=method)) + geom_col(alpha = 0.8, width = 0.7) +
+  geom_errorbar(aes(ymin = mean_auprc - sd_auprc, ymax = mean_auprc + sd_auprc), width = 0.2) +
+  geom_text(aes(label = round(mean_auprc, 3)), nudge_y = 0.05, size = 4) + scale_y_continuous(limits = c(0, 1)) +
+  scale_fill_manual(values=c("#E69F00", "#0072B2", "#D55E00", "#009E73", "#CC79A7", "#56B4E9", "#F0E442", "#505050")) +
+  labs(title = "Average auPRC", x = "Method", y = "Mean auPRC") + theme_cowplot() + theme(legend.position = "none")
+  print(p)
+  ggsave(paste0(plot_dir, "/", dataset, "_auprc_curve.png"), p, height = 4, width=8)
+}
+
+
+auprc_test <- AUC(as.numeric(prc_df[prc_df$method=="Lilace",]$recall), as.numeric(prc_df[prc_df$method=="Lilace",]$precision))
+auprc_test <- AUC(prc_summary[prc_summary$method=="mean bin\nBH",]$mean_recall, prc_summary[prc_summary$method=="mean bin\nBH",]$mean_precision)
+```
+
 # Figure 4: Empirical FDR metrics
 ```{r}
 # masked synonymous empirical FDR
-source("../src/plot_func.R")
-source("../src/methods/diagnostics.R")
+source("../../src/plot_func.R")
+source("../../src/methods/diagnostics.R")
 datasets <- c("oct1_rescaled_masked", "kir21_Surface_abundance_rescaled_masked", "gpcr_ph55_rescaled_masked", "kir21_Abundance_rescaled_masked")
 # get sig cutoff df from yaml + param setting
 for (dataset in datasets) {
@@ -159,8 +306,6 @@ for (dataset in datasets) {
   masked_FDR_df <- rename_methods(masked_FDR_df)
   make_masked_FDR_plots(masked_FDR_df, dataset, plot_dir)
 }
-
-
 ```
 
 ## Masked synonymous box plots
@@ -177,12 +322,15 @@ for (dataset in datasets) {
   for (effect_prop in c(0.2)) {
     FDR_FNR_df <- c()
     for (iter in 0:9) {
+      print(iter)
       dataset_iter <- paste0(dataset, "_", effect_prop, "_", iter)
       fit_df <- readRDS(paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset_iter, "/baseline_", dataset_iter, "/fitted_df.RData"))
       # get sim obj
       # get fit df
       effect_cols <- c(paste0(model, "_mu_mean"), paste0(model, "_syn_recalibrated_mu_mean"), "enrich_score", "weight_effect_mean", "shep_effect_mean", "ML_effect_mean")
       sd_cols <- c(NA, NA, "enrich_SE", "weight_effect_se", "shep_effect_se", "ML_effect_se")
+      effect_cols <- c(effect_cols, "lilace_VI_normal_mu_mean", "lilace_VI_multivariate_normal_mu_mean")
+      sd_cols <- c(sd_cols, rep(NA, 2))
       sig_cutoff <- 0.95
       
       fit_df_called <- label_significant(fit_df, 
@@ -191,23 +339,33 @@ for (dataset in datasets) {
                                       sig_cutoff)
       # filter to one obs per variant to get FDR on variant scale
       fit_df_called <- fit_df_called %>% group_by(hgvs) %>% filter(row_number() == 1)
-      for (method in effect_cols) {
-        rank_df <- fit_df_called
-        
-        disco_df <- rank_df[!is.na(rank_df[[paste0(method, "_disc")]]) & rank_df[[paste0(method, "_disc")]],]
-        # FDR <- sum(disco_df$type=="masked_synonymous") / nrow(disco_df)
-        N_syn_called <- sum(disco_df$type=="masked_synonymous") / sum(rank_df$type=="masked_synonymous")
-        # compute sim metrics
-        model_FDR <- data.frame(method, N_syn_called, sig_cutoff, iter)
-        FDR_FNR_df <- rbind(FDR_FNR_df, model_FDR)
-        # add sd effects
-        if (paste0(method, "_syn_sd_disc") %in% colnames(rank_df)) {
-          method <- paste0(method, "_syn_sd")
+      
+      method_cols <- effect_cols
+      # add other ML and weight bin methods: syn_sd_cut
+      for (base_method in c("weight_effect_mean", "ML_effect_mean")) {
+        other_methods <- paste0(base_method, c("_syn_sd", "_syn_sd_BH", "_ttest", "_lik_simes", "_lik_fishers"))
+        method_cols <- c(method_cols, other_methods)
+      }
+      method_cols <- c(method_cols, "enrich_score_syn_sd")
+      for (method in method_cols) {
+        if (paste0(method, "_disc") %in% colnames(fit_df_called)) {
+          rank_df <- fit_df_called
+          
           disco_df <- rank_df[!is.na(rank_df[[paste0(method, "_disc")]]) & rank_df[[paste0(method, "_disc")]],]
-          # FDR <- sum(disco_df$type=="masked_synonymous")  / nrow(disco_df)
+          # FDR <- sum(disco_df$type=="masked_synonymous") / nrow(disco_df)
           N_syn_called <- sum(disco_df$type=="masked_synonymous") / sum(rank_df$type=="masked_synonymous")
+          # compute sim metrics
           model_FDR <- data.frame(method, N_syn_called, sig_cutoff, iter)
           FDR_FNR_df <- rbind(FDR_FNR_df, model_FDR)
+          # add sd effects
+          # if (paste0(method, "_syn_sd_disc") %in% colnames(rank_df)) {
+          #   method <- paste0(method, "_syn_sd")
+          #   disco_df <- rank_df[!is.na(rank_df[[paste0(method, "_disc")]]) & rank_df[[paste0(method, "_disc")]],]
+          #   # FDR <- sum(disco_df$type=="masked_synonymous")  / nrow(disco_df)
+          #   N_syn_called <- sum(disco_df$type=="masked_synonymous") / sum(rank_df$type=="masked_synonymous")
+          #   model_FDR <- data.frame(method, N_syn_called, sig_cutoff, iter)
+          #   FDR_FNR_df <- rbind(FDR_FNR_df, model_FDR)
+          # }
         }
       }
     }
@@ -216,16 +374,16 @@ for (dataset in datasets) {
     print(ggplot(FDR_FNR_df, aes(x=method, y=N_syn_called)) + geom_boxplot(width = 0.5, position = position_dodge(0.6), fill="orange") + theme_cowplot() + theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1)) + ggtitle(paste(dataset, effect_prop)))
     
     FDR_FNR_plot_df <- FDR_FNR_df %>% group_by(method) %>% summarize(prop_syn_called=mean(N_syn_called), sd_prop_syn_called=sd(N_syn_called))
-    FDR_FNR_plot_df <- FDR_FNR_plot_df[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|enrich2", FDR_FNR_plot_df$method),]
-    FDR_FNR_plot_df$sample_ord <- factor(FDR_FNR_plot_df$method, levels = c("Lilace", "Lilace\n(unrecalibrated)", "ML\n2sd", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
-    FDR_FNR_plot_df <- FDR_FNR_plot_df[FDR_FNR_plot_df$method!="Lilace\n(unrecalibrated)",]
+    # FDR_FNR_plot_df <- FDR_FNR_plot_df[grepl("Lilace|ML\n2sd|mean\ bin|enrich2", FDR_FNR_plot_df$method),]
+    # FDR_FNR_plot_df$sample_ord <- factor(FDR_FNR_plot_df$method, levels = c("Lilace", "mean bin\nBH", "mean bin\n2sd", "ML\n2sd", "ML\n2sd BH",  "enrich2\n2sd", "enrich2\np-value"))
+    FDR_FNR_plot_df$sample_ord <- as.factor(FDR_FNR_plot_df$method)
+    # FDR_FNR_plot_df <- FDR_FNR_plot_df[FDR_FNR_plot_df$method!="Lilace\n(unrecalibrated)",]
     total_df <- rbind(total_df, cbind(dataset, protein, FDR_FNR_plot_df))
     p <- ggplot(FDR_FNR_plot_df, aes(x=sample_ord, y=prop_syn_called)) + 
               geom_pointrange(aes(ymin = prop_syn_called - sd_prop_syn_called, ymax = prop_syn_called + sd_prop_syn_called), color="orange") +
               expand_limits(y=0) + 
               theme_cowplot() + xlab("method") + ylab("Prop Synonymous Called") + scale_color_tableau()
-    print(p)
-    ggsave(paste0("empirical_figures/masked_syn_box_plots/", dataset, "_", effect_prop, ".png"), p, height=3, width=6)
+    ggsave(paste0("empirical_figures/new/masked_syn_box_plots/", dataset, "_", effect_prop, "_full.png"), p, height=3, width=6)
   }
 }
 
@@ -243,32 +401,44 @@ summary_total_df$method <- as.character(summary_total_df$sample_ord)
 summary_total_df <- summary_total_df %>% select("dataset", "protein", "method", "prop_syn_called", "sd_prop_syn_called", "sample_ord")
 full_total_df <- rbind(total_df, summary_total_df)
 
-p <- ggplot(full_total_df, aes(x=sample_ord, y=prop_syn_called, color=dataset)) + 
-          geom_pointrange(aes(ymin = prop_syn_called - sd_prop_syn_called, ymax = prop_syn_called + sd_prop_syn_called), position = position_dodge(0.4)) +
+
+full_total_df_plot$dataset <- factor(full_total_df_plot$dataset, levels=c("Average across datasets", "PTEN", "GPR68", "TPMT", 
+                                                                                          "Kir2.1 Abundance", "Kir2.1 Surface", "OCT1", "P2RY8"))
+full_total_df_plot <- full_total_df[full_total_df$method != "mean bin\nnorm approx" & full_total_df$method != "ML\nnorm approx",]
+full_total_df_plot$sample_ord <- factor(full_total_df_plot$method, levels=c("Lilace", "Lilace\n(unrecal)", 
+                                                                            "mean bin\nBH", "mean bin\n2sd", "mean bin\nfishers",  "mean bin\nsimes", 
+                                                                            "mean bin\nt-test",
+                                                                            "ML\nBH", "ML\n2sd", "ML\nfishers", "ML\nsimes",
+                                                                            "ML\nt-test", "enrich2\n2sd", "enrich2\np-value"
+                                                                            ))
+
+p <- ggplot(full_total_df_plot, aes(x=sample_ord, y=prop_syn_called, color=dataset)) + 
+          geom_pointrange(aes(ymin = prop_syn_called - sd_prop_syn_called, ymax = prop_syn_called + sd_prop_syn_called), position = position_dodge(0.6)) +
           expand_limits(y=0) + 
           scale_color_manual(values=c("#505050", "#E69F00", "#0072B2", "#D55E00", "#009E73", "#CC79A7", "#56B4E9", "#F0E442")) +
           theme_cowplot() + xlab("method") + ylab("Prop Synonymous Called")
 print(p)
-ggsave(paste0("empirical_figures/syn_box_w_summary.png"), p, height=4, width=12)
+ggsave(paste0("empirical_figures/new/syn_box_w_summary_full.png"), p, height=4, width=20)
 
 p <- ggplot(total_df %>% group_by(sample_ord) %>% summarize(mean_prop_syn_called=mean(prop_syn_called), sd_prop_syn_called=sd(prop_syn_called)),
        aes(x=sample_ord, y=mean_prop_syn_called)) + geom_pointrange(aes(ymin = mean_prop_syn_called - sd_prop_syn_called, ymax = mean_prop_syn_called + sd_prop_syn_called), position = position_dodge(0.4), color="orange") +
           expand_limits(y=0) + 
           scale_color_manual(values=c("#505050", "#E69F00", "#0072B2", "#D55E00", "#009E73", "#CC79A7", "#56B4E9", "#F0E442")) +
           theme_cowplot() + xlab("method") + ylab("Prop Synonymous Called")
-ggsave(paste0("empirical_figures/syn_box_summarized.png"), p, height=4, width=12)
+ggsave(paste0("empirical_figures/new/syn_box_summarized_full.png"), p, height=4, width=20)
 
 ```
 
 
 ```{r}
-source("../src/plot_func.R")
-source("../src/methods/diagnostics.R")
+source("../../src/plot_func.R")
+source("../../src/methods/diagnostics.R")
 # AlphaMissense ROC curves
 datasets <- c("oct1_rescaled", "Kir21_surface_abundance_rescaled", "gpcr_ph55_rescaled", "Kir21_Abundance_rescaled", "pten_dropNA", "tpmt_dropNA", "p2ry8_surf_rescaled")
 # datasets <- c("oct1_rescaled", "Kir21_surface_abundance_rescaled", "gpcr_ph55_rescaled", "Kir21_Abundance_rescaled", "pten_dropNA", "tpmt_dropNA")
 box_FDR_df <- c()
 corrs <- c()
+auROC_df <- c()
 for (dataset in datasets) {
   protein <- str_extract(dataset, "[^_]+")
   am_df <- read_tsv(paste0("../../datasets/alpha_missense/", protein, ".tsv"))
@@ -290,6 +460,7 @@ for (dataset in datasets) {
   }
   
   # make box plots at 95%
+  source("../../src/methods/diagnostics.R")
   am_box_df <- make_am_box_df(fit_df, am_df)
   merged <- merge(fit_df, am_df)
   print(sum(is.na(merged$enrich_score))/length(merged$enrich_score))
@@ -303,46 +474,87 @@ for (dataset in datasets) {
   
   box_FDR_df <- rbind(box_FDR_df, cbind(dataset, protein, am_box_df))
   
-  # make FP TP df
-  am_curve_df <- make_am_curve_df(fit_df, am_df, "FACS_double_sample_repq")
-  # print(head(am_curve_df))
-  # print(nrow(fit_df_called_am))
-  # print(nrow(am_curve_df))
-
-  am_curve_df_filt <- rename_methods(am_curve_df)
-  am_curve_df_filt2 <- am_curve_df_filt[am_curve_df_filt$method!="Lilace\n(unrecalibrated)" &
-                                          am_curve_df_filt$method!="mean bin" &
-                                          am_curve_df_filt$method!="ML_effect_mean",]
-  p <- ggplot(am_curve_df_filt2, aes(x=FPR, y=TPR, color=method)) + geom_line() + theme_cowplot() + panel_border()
-  # print(p)
-  ggsave(paste0("empirical_figures/am_roc/", dataset, ".png"), p)
+  # # # make FP TP df
+  # am_curve_df <- make_am_curve_df(fit_df, am_df, "FACS_double_sample_repq")
+  # # print(head(am_curve_df))
+  # # print(nrow(fit_df_called_am))
+  # # print(nrow(am_curve_df))
+  # 
+  # am_curve_df_filt <- rename_methods(am_curve_df)
+  # am_curve_df_filt2 <- am_curve_df_filt[am_curve_df_filt$method!="Lilace\n(unrecalibrated)" &
+  #                                         am_curve_df_filt$method!="mean bin" &
+  #                                         am_curve_df_filt$method!="ML_effect_mean",]
+  # # am_curve_df_filt2$method <- factor(am_curve_df_filt2$method, levels=c("enrich2\np-value", "enrich2\n2sd", "ML\nBH", "mean bin\nBH", "Lilace"))
+  # am_curve_df_filt2$method <- as.factor(am_curve_df_filt2$method)
+  # p <- ggplot(am_curve_df_filt2, aes(x=FPR, y=TPR, color=method)) + geom_line(lwd=1) + theme_cowplot() + 
+  #   scale_color_manual(values=c("#E69F00", "#0072B2", "#D55E00", "#009E73", "#56B4E9", "#F0E442","#505050", "#BABABA"),
+  #                      breaks=c("Lilace", "mean bin\nBH", "ML\nBH","enrich2\n2sd", "enrich2\np-value"))
+  # # print(p)
+  # ggsave(paste0("empirical_figures/am_roc/", dataset, ".png"), p)
+  # for (method in unique(am_curve_df_filt2$method)) {
+  #   auc_subset <- am_curve_df_filt2[am_curve_df_filt2$method==method,]
+  #   # sorted_indices = order(auc_subset$TPR)
+  #   # auc_subset <- rbind(auc_subset, data.frame(method=method, FDR=0, FNR=0, TPR=0, FPR=0, i=0))
+  #   # auc_subset <- rbind(auc_subset, data.frame(method=method, FDR=0, FNR=0, TPR=1, FPR=1, i=0))
+  #   auc <- AUC(auc_subset[sorted_indices,]$FPR, auc_subset[sorted_indices,]$TPR)
+  #   auROC_df <- rbind(auROC_df, c(dataset, method, auc))
+  # }
 }
 print(as.data.frame(corrs) %>% pivot_wider(names_from=c(V2), values_from=c(V3)))
+
+# auROC_df <- data.frame(auROC_df)
+# colnames(auROC_df) <- c("dataset", "method", "auROC")
+# auROC_df[auROC_df$dataset=="oct1_rescaled",]$dataset <- "OCT1"
+# auROC_df[auROC_df$dataset=="Kir21_surface_abundance_rescaled",]$dataset <- "Kir2.1 Surface"
+# auROC_df[auROC_df$dataset=="gpcr_ph55_rescaled",]$dataset <- "GPR68"
+# auROC_df[auROC_df$dataset=="Kir21_Abundance_rescaled",]$dataset <- "Kir2.1 Abundance"
+# auROC_df[auROC_df$dataset=="pten_dropNA",]$dataset <- "PTEN"
+# auROC_df[auROC_df$dataset=="tpmt_dropNA",]$dataset <- "TPMT"
+# auROC_df[auROC_df$dataset=="p2ry8_surf_rescaled",]$dataset <- "P2RY8"
+# auROC_df$dataset <- factor(auROC_df$dataset, levels=c("PTEN", "GPR68", "TPMT", 
+#                                                       "Kir2.1 Abundance", "Kir2.1 Surface", "OCT1", "P2RY8"))
+# auROC_df$method <- factor(auROC_df$method, levels=c("Lilace", "mean bin\nBH", "ML\nBH", "enrich2\n2sd", "enrich2\np-value"))
+# p <- ggplot(auROC_df, aes(x=method, y=as.numeric(auROC), fill=dataset)) + geom_col(position="dodge", color="black") + theme_cowplot() +
+#   scale_fill_manual(values=c("#E69F00", "#0072B2", "#D55E00", "#009E73", "#CC79A7", "#56B4E9", "#F0E442" , "#BABABA")) +
+#   ylab("AlphaMissense auROC")
+# ggsave(paste0("empirical_figures/am_roc/auroc.png"), p, height=4, width=9)
 
 box_FDR_df_filt <- rename_methods(box_FDR_df)
 box_FDR_df_filt <- box_FDR_df_filt[box_FDR_df_filt$dataset!="p2ry8_surf_rescaled",]
 box_FDR_df_plot <- box_FDR_df_filt %>% group_by(method) %>% 
-    summarize(mean_FDR = mean(FDR), mean_sens = mean(sens),
-              sd_FDR = sd(FDR), sd_sens = sd(sens))
+    summarize(mean_FDR = mean(FDR, na.rm=T), mean_sens = mean(sens, na.rm=T),
+              sd_FDR = sd(FDR, na.rm=T), sd_sens = sd(sens, na.rm=T))
 # ggplot(box_FDR_df_filt, aes(x=method, y=sens, color=method, label=protein)) + geom_text() + theme_cowplot() + panel_border()
 
-box_FDR_df_plot <- box_FDR_df_plot[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|enrich2", box_FDR_df_plot$method),]
-box_FDR_df_plot$sample_ord <- factor(box_FDR_df_plot$method, levels = c("Lilace", "Lilace\n(unrecalibrated)", "ML\n2sd", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+# box_FDR_df_plot <- box_FDR_df_plot[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|enrich2", box_FDR_df_plot$method),]
+# box_FDR_df_plot$sample_ord <- factor(box_FDR_df_plot$method, levels = c("Lilace", "Lilace\n(unrecalibrated)", "ML\n2sd BH", "mean bin\n2sd BH", "ML\n2sd", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
 
+# box_FDR_df_plot <- box_FDR_df_plot[grepl("Lilace|ML\n2sd|mean bin|enrich2", box_FDR_df_plot$method),]
+# box_FDR_df_plot$sample_ord <- factor(box_FDR_df_plot$method, levels = c("Lilace", "mean bin\nBH", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+box_FDR_df_plot <- box_FDR_df_plot[box_FDR_df_plot$method != "mean bin\nnorm approx" &
+                                   box_FDR_df_plot$method != "ML\nnorm approx" &
+                                   box_FDR_df_plot$method != "Lilace VI" &
+                                   box_FDR_df_plot$method != "Lilace VI (MV)",]
+box_FDR_df_plot$sample_ord <- factor(box_FDR_df_plot$method, levels = c("Lilace", "Lilace\n(unrecal)", 
+                                                                            "mean bin\nBH", "mean bin\n2sd", "mean bin\nfishers",  "mean bin\nsimes", 
+                                                                            "mean bin\nt-test",
+                                                                            "ML\nBH", "ML\n2sd", "ML\nfishers", "ML\nsimes",
+                                                                            "ML\nt-test", "enrich2\n2sd", "enrich2\np-value"
+                                                                            ))
 p_FDR <- ggplot(box_FDR_df_plot, aes(x=sample_ord, y=mean_FDR)) + 
               geom_pointrange(aes(ymin = mean_FDR - sd_FDR, ymax = mean_FDR + sd_FDR), color="orange") +
               expand_limits(y=0) + 
-              theme_cowplot() + xlab("method") + ylab("FDR")
+              theme_cowplot() + xlab("method") + ylab("FDR") & theme(axis.text.x = element_text(angle = 30, hjust = 0.8))
 p_FNR <- ggplot(box_FDR_df_plot, aes(x=sample_ord, y=mean_sens)) + 
              geom_pointrange(aes(ymin = mean_sens - sd_sens, ymax = mean_sens + sd_sens), color="orange") +
               expand_limits(y=0) + 
-              theme_cowplot() + xlab("method") + ylab("Sensitivity")
+              theme_cowplot() + xlab("method") + ylab("Sensitivity") & theme(axis.text.x = element_text(angle = 30, hjust = 0.8))
 
 p <- p_FDR + p_FNR + plot_layout(ncol=2, guides = "collect") & theme(text = element_text(size = 14), axis.text = element_text(size = 12))
 print(p)
-ggsave(paste0("empirical_figures/am_box+unrecalibrated.png"), p, height=3, width=12)
+ggsave(paste0("empirical_figures/new/am_box+unrecalibrated.png"), p, height=3, width=20)
 
-box_FDR_df_plot_minus <- box_FDR_df_plot[box_FDR_df_plot$method != "Lilace\n(unrecalibrated)",]
+box_FDR_df_plot_minus <- box_FDR_df_plot_minus[!is.na(box_FDR_df_plot_minus$sample_ord),]
 
 p_FDR <- ggplot(box_FDR_df_plot_minus, aes(x=sample_ord, y=mean_FDR)) + 
               geom_pointrange(aes(ymin = mean_FDR - sd_FDR, ymax = mean_FDR + sd_FDR), color="orange") +
@@ -355,7 +567,63 @@ p_FNR <- ggplot(box_FDR_df_plot_minus, aes(x=sample_ord, y=mean_sens)) +
 
 p <- p_FDR + p_FNR + plot_layout(ncol=2, guides = "collect") & theme(text = element_text(size = 14), axis.text = element_text(size = 12))
 print(p)
-ggsave(paste0("empirical_figures/am_box.png"), p, height=3, width=12)
+ggsave(paste0("empirical_figures/new/am_box.png"), p, height=3, width=12)
+
+box_FDR_df_plot <- box_FDR_df_filt
+box_FDR_df_plot <- box_FDR_df_plot[grepl("Lilace|ML\n2sd|mean bin|enrich2", box_FDR_df_plot$method),]
+# box_FDR_df_plot$sample_ord <- factor(box_FDR_df_plot$method, levels = c("Lilace", "mean bin\nBH", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+box_FDR_df_plot$sample_ord <- factor(box_FDR_df_plot$method, levels = c("Lilace", "Lilace VI"))
+# box_FDR_df_plot_minus <- box_FDR_df_plot[box_FDR_df_plot$method != "Lilace\n(unrecalibrated)",]
+box_FDR_df_plot_minus <- box_FDR_df_plot[!is.na(box_FDR_df_plot$sample_ord),]
+box_FDR_df_plot_minus[box_FDR_df_plot_minus$dataset=="oct1_rescaled",]$dataset <- "OCT1"
+box_FDR_df_plot_minus[box_FDR_df_plot_minus$dataset=="Kir21_surface_abundance_rescaled",]$dataset <- "Kir2.1 Surface"
+box_FDR_df_plot_minus[box_FDR_df_plot_minus$dataset=="gpcr_ph55_rescaled",]$dataset <- "GPR68"
+box_FDR_df_plot_minus[box_FDR_df_plot_minus$dataset=="Kir21_Abundance_rescaled",]$dataset <- "Kir2.1 Abundance"
+box_FDR_df_plot_minus[box_FDR_df_plot_minus$dataset=="pten_dropNA",]$dataset <- "PTEN"
+box_FDR_df_plot_minus[box_FDR_df_plot_minus$dataset=="tpmt_dropNA",]$dataset <- "TPMT"
+# box_FDR_df_plot_minus[box_FDR_df_plot_minus$dataset=="p2ry8_surf_rescaled",]$dataset <- "P2RY8"
+summary_total_df <- box_FDR_df_plot_minus %>% group_by(sample_ord) %>% summarize(FDR=mean(FDR), FNR=mean(FNR), sens=mean(sens))
+summary_total_df$dataset <- "Average across datasets"
+summary_total_df$protein <- "Average across datasets"
+summary_total_df$method <- as.character(summary_total_df$sample_ord)
+summary_total_df <- summary_total_df %>% select("dataset", "protein", "method", "FDR", "FNR", "sens", "sample_ord")
+box_FDR_df_plot_minus_full <- rbind(box_FDR_df_plot_minus, summary_total_df)
+box_FDR_df_plot_minus_full$dataset <- factor(box_FDR_df_plot_minus_full$dataset, levels=c("Average across datasets", "PTEN", "GPR68", "TPMT", 
+                                                                                          "Kir2.1 Abundance", "Kir2.1 Surface", "OCT1"))
+# p_FDR <- ggplot(box_FDR_df_plot_minus_full, aes(x=sample_ord, y=FDR, color=dataset)) +
+#               geom_point(position = position_dodge2(0.5, preserve = "single"), size=2.5) +
+#   scale_color_manual(values=c("#505050", "#E69F00", "#0072B2", "#D55E00", "#009E73", "#56B4E9", "#F0E442",  "#BABABA")) +
+#               expand_limits(y=0) +
+#               theme_cowplot() + xlab("method") + ylab("FDR")
+# p_FNR <- ggplot(box_FDR_df_plot_minus_full, aes(x=sample_ord, y=sens, color=dataset)) +
+#              geom_point(position = position_dodge2(0.5, preserve = "single"), size=2.5) +
+#   scale_color_manual(values=c("#505050", "#E69F00", "#0072B2", "#D55E00", "#009E73", "#56B4E9", "#F0E442", "#BABABA")) +
+#               expand_limits(y=0) +
+#               theme_cowplot() + xlab("method") + ylab("Sensitivity")
+
+p <- p_FDR + p_FNR + plot_layout(ncol=2, guides = "collect") & theme(text = element_text(size = 14), axis.text = element_text(size = 12))
+p_FDR <- ggplot(box_FDR_df_plot_minus_full, aes(x=sample_ord, y=FDR, fill=dataset)) +
+         geom_col(position = "dodge", color="black") + # Use geom_col for bar heights from data values
+         scale_fill_manual(values=c("#505050", "#E69F00", "#0072B2", "#D55E00", "#009E73", "#56B4E9", "#F0E442", "#BABABA")) +
+         expand_limits(y=0) +
+         theme_cowplot() +
+         xlab("method") +
+         ylab("FDR")
+
+# Sensitivity Bar Plot
+p_FNR <- ggplot(box_FDR_df_plot_minus_full, aes(x=sample_ord, y=sens, fill=dataset)) +
+         geom_col(position = "dodge", color="black") + # Use geom_col for bar heights from data values
+         scale_fill_manual(values=c("#505050", "#E69F00", "#0072B2", "#D55E00", "#009E73", "#56B4E9", "#F0E442", "#BABABA")) +
+         expand_limits(y=0) +
+         theme_cowplot() +
+         xlab("method") +
+         ylab("Sensitivity")
+
+# Combine the plots
+p <- p_FDR + p_FNR + plot_layout(ncol=2, guides = "collect") &
+     theme(text = element_text(size = 14), axis.text = element_text(size = 12))
+print(p)
+ggsave(paste0("empirical_figures/new/am_box_by_dataset_VI.png"), p, height=3, width=12)
 
 # am p2ry8
 box_FDR_df_filt <- rename_methods(box_FDR_df)
@@ -365,31 +633,35 @@ box_FDR_df_plot <- box_FDR_df_filt %>% group_by(method) %>%
               sd_FDR = sd(FDR), sd_sens = sd(sens))
 # ggplot(box_FDR_df_filt, aes(x=method, y=sens, color=method, label=protein)) + geom_text() + theme_cowplot() + panel_border()
 
-box_FDR_df_plot <- box_FDR_df_plot[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|enrich2", box_FDR_df_plot$method),]
-box_FDR_df_plot$sample_ord <- factor(box_FDR_df_plot$method, levels = c("Lilace", "Lilace\n(unrecalibrated)", "ML\n2sd", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+# box_FDR_df_plot <- box_FDR_df_plot[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|enrich2", box_FDR_df_plot$method),]
+# box_FDR_df_plot$sample_ord <- factor(box_FDR_df_plot$method, levels = c("Lilace", "Lilace\n(unrecalibrated)", "ML\n2sd BH", "mean bin\n2sd BH", "ML\n2sd", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+box_FDR_df_plot$sample_ord <- factor(box_FDR_df_plot$method, levels = c("Lilace", "mean bin\nBH", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+box_FDR_df_plot_minus <- box_FDR_df_plot[!is.na(box_FDR_df_plot$sample_ord),]
 
-p_FDR <- ggplot(box_FDR_df_plot, aes(x=sample_ord, y=mean_FDR)) + 
+p_FDR <- ggplot(box_FDR_df_plot_minus, aes(x=sample_ord, y=mean_FDR)) + 
               geom_point(color="orange") +
               expand_limits(y=0) + 
               theme_cowplot() + xlab("method") + ylab("FDR")
-p_FNR <- ggplot(box_FDR_df_plot, aes(x=sample_ord, y=mean_sens)) + 
+p_FNR <- ggplot(box_FDR_df_plot_minus, aes(x=sample_ord, y=mean_sens)) + 
              geom_point(color="orange") +
               expand_limits(y=0) + 
               theme_cowplot() + xlab("method") + ylab("Sensitivity")
 
 p <- p_FDR + p_FNR + plot_layout(ncol=2, guides = "collect") & theme(text = element_text(size = 14), axis.text = element_text(size = 12))
-ggsave(paste0("empirical_figures/am_box_p2ry8.png"), p, height=3, width=12)
+ggsave(paste0("empirical_figures/new/am_box_p2ry8.png"), p, height=3, width=12)
 
 ```
 
 ## clinvar empirical plots
 ```{r}
 library(Biostrings)
-source("../src/plot_func.R")
-source("../src/methods/diagnostics.R")
+source("../../src/plot_func.R")
+source("../../src/methods/diagnostics.R")
 # AlphaMissense ROC curves
-datasets <- c("oct1_rescaled", "Kir21_surface_abundance_rescaled", "gpcr_ph55_rescaled", "Kir21_Abundance_rescaled", "pten_dropNA", "tpmt_dropNA")
-gene_names <- c("SLC22A1", "KCNJ2", "GPR68", "KCNJ2", "PTEN", "TPMT")
+# datasets <- c("oct1_rescaled", "Kir21_surface_abundance_rescaled", "gpcr_ph55_rescaled", "Kir21_Abundance_rescaled", "pten_dropNA", "tpmt_dropNA")
+datasets <- c("Kir21_surface_abundance_rescaled", "Kir21_Abundance_rescaled", "pten_dropNA")
+# gene_names <- c("SLC22A1", "KCNJ2", "GPR68", "KCNJ2", "PTEN", "TPMT")
+gene_names <- c("KCNJ2", "KCNJ2", "PTEN")
 # datasets <- c("oct1_rescaled", "Kir21_surface_abundance_rescaled", "gpcr_ph55_rescaled", "Kir21_Abundance_rescaled", "pten_dropNA", "tpmt_dropNA")
 box_FDR_df <- c()
 clinvar_counts <- c()
@@ -437,12 +709,12 @@ box_FDR_df_plot <- box_FDR_df_filt %>% group_by(method) %>%
               sd_FDR = sd(FDR), sd_sens = sd(sens))
 # ggplot(box_FDR_df_filt, aes(x=method, y=sens, color=method, label=protein)) + geom_text() + theme_cowplot() + panel_border()
 
-box_FDR_df_filt <- box_FDR_df_filt[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|enrich2", box_FDR_df_filt$method),]
-box_FDR_df_filt$sample_ord <- factor(box_FDR_df_filt$method, levels = c("Lilace", "Lilace\n(unrecalibrated)", "ML\n2sd", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+# box_FDR_df_filt <- box_FDR_df_filt[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|enrich2", box_FDR_df_filt$method),]
+box_FDR_df_filt$sample_ord <- factor(box_FDR_df_filt$method, levels = c("Lilace", "mean bin\nBH", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
 box_FDR_df_filt[box_FDR_df_filt$dataset=="Kir21_Abundance_rescaled",]$dataset <- "Kir2.1 Abundance" 
 box_FDR_df_filt[box_FDR_df_filt$dataset=="Kir21_surface_abundance_rescaled",]$dataset <- "Kir2.1 Surface Expression" 
 box_FDR_df_filt[box_FDR_df_filt$dataset=="pten_dropNA",]$dataset <- "PTEN" 
-box_FDR_df_filt <- box_FDR_df_filt[box_FDR_df_filt$method != "Lilace\n(unrecalibrated)",]
+box_FDR_df_filt <- box_FDR_df_filt[box_FDR_df_filt$method != "ML\nBH",]
 
 p_FNR <- ggplot(box_FDR_df_filt, aes(x=sample_ord, y=sens, color=dataset)) + 
              geom_point() +
@@ -456,8 +728,8 @@ ggsave("empirical_figures/clinvar_sens.png", p_FNR, height=4, width=8)
 
 ## nonsense empirical FNR plots
 ```{r}
-source("../src/plot_func.R")
-source("../src/methods/diagnostics.R")
+source("../../src/plot_func.R")
+source("../../src/methods/diagnostics.R")
 # nonsense mutation plot
 datasets <- c("pten_dropNA", "tpmt_dropNA")
 total_FNR_df <- c()
@@ -468,20 +740,20 @@ for (dataset in datasets) {
 }
 
 total_FNR_df <- rename_methods(total_FNR_df)
-total_FNR_df <- total_FNR_df[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|enrich2", total_FNR_df$method),]
-total_FNR_df$sample_ord <- factor(total_FNR_df$method, levels = c("Lilace", "Lilace\n(unrecalibrated)", "ML\n2sd", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+# total_FNR_df <- total_FNR_df[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|enrich2", total_FNR_df$method),]
+total_FNR_df$sample_ord <- factor(total_FNR_df$method, levels = c("Lilace", "mean bin\nBH", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
 
 total_FNR_df[total_FNR_df$dataset=="pten_dropNA",]$dataset <- "PTEN"
 total_FNR_df[total_FNR_df$dataset=="tpmt_dropNA",]$dataset <- "TPMT"
 # total_FNR_df[total_FNR_df$dataset=="p2ry8_surf_rescaled",]$dataset <- "P2RY8"
 
-
+total_FNR_df <- total_FNR_df[total_FNR_df$method != "ML\nBH",]
 p <- ggplot(total_FNR_df, aes(x=sample_ord, y=sens, color=dataset)) + 
           geom_point() +
           expand_limits(y=0) + 
           theme_cowplot() + xlab("method") + ylab("Prop Nonsense Called")
 print(p)
-# ggsave(paste0("empirical_figures/nonsense_box.png"), p, height=4, width=8)
+ggsave(paste0("empirical_figures/nonsense_box.png"), p, height=4, width=8)
 
 
 ```
@@ -573,7 +845,7 @@ datasets <- c("oct1_rescaled", "Kir21_surface_abundance_rescaled", "gpcr_ph55_re
 
 model_stats_df <- c()
 for (dataset in datasets) {
-  for (model in c("FACS_double_sample_nopos", "FACS_double_sample", "FACS_double_sample_repq")) {
+  for (model in c("FACS_double_sample_nopos", "FACS_double_sample_repq")) {
     model_yaml <- paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset, "/baseline_", dataset, "/", model, "_plots/model_stats.yaml")
     fit_df <- readRDS(paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset, "/baseline_", dataset, "/fitted_df.RData"))
     n_positions <- length(unique(fit_df$position))
@@ -583,6 +855,21 @@ for (dataset in datasets) {
                                               n_max_tree=sum(model_stats$n_max_tree),
                                               mean_ebfmi=mean(model_stats$ebfmi),
                                               runtime=model_stats$runtime))
+    # get VI model stats
+    if (model == "FACS_double_sample_repq") {
+      VI_model_yaml <- paste0("../../hoffman_output/data_baselines_inc_fixed_phi/data/", dataset, "/baseline_", dataset, "/", model, "_plots/VI_model_stats.yaml")
+    VI_model_yaml <- yaml::read_yaml(VI_model_yaml)
+    model_stats_df <- rbind(model_stats_df, c(dataset=dataset, model="Lilace VI", n_pos=n_positions,
+                                              n_divergent=NA, 
+                                              n_max_tree=NA,
+                                              mean_ebfmi=NA,
+                                              runtime=VI_model_yaml$normal_runtime))
+    model_stats_df <- rbind(model_stats_df, c(dataset=dataset, model="Lilace VI (MV)", n_pos=n_positions,
+                                              n_divergent=NA, 
+                                              n_max_tree=NA,
+                                              mean_ebfmi=NA,
+                                              runtime=VI_model_yaml$multinormal_runtime))
+    }
   }
 }
 model_stats_df <- as.data.frame(model_stats_df)
@@ -592,9 +879,11 @@ model_stats_df$runtime <- gsubfn::gsubfn("([0-9.]+)", ~format(round(as.numeric(x
 
 ```{r}
 plot_model_stats_df <- model_stats_df
-plot_model_stats_df[plot_model_stats_df$dataset=="p2ry8_surf_rescaled" & plot_model_stats_df$model == "FACS_double_sample",]$runtime <- "31.44 hours"
+# plot_model_stats_df[plot_model_stats_df$dataset=="p2ry8_surf_rescaled" & plot_model_stats_df$model == "FACS_double_sample",]$runtime <- "31.44 hours"
 plot_model_stats_df[plot_model_stats_df$dataset=="p2ry8_surf_rescaled" & plot_model_stats_df$model == "FACS_double_sample_repq",]$runtime <- "48 hours"
 plot_model_stats_df$runtime_numeric <- as.numeric(gsub(" hours", "", plot_model_stats_df$runtime))
+plot_model_stats_df[grepl("mins", plot_model_stats_df$runtime),]$runtime_numeric <- as.numeric(gsub(" mins", "", plot_model_stats_df[grepl("mins", plot_model_stats_df$runtime),]$runtime)) / 60
+plot_model_stats_df[grepl("days", plot_model_stats_df$runtime),]$runtime_numeric <- as.numeric(gsub(" days", "", plot_model_stats_df[grepl("days", plot_model_stats_df$runtime),]$runtime)) * 24
 
 plot_model_stats_df[plot_model_stats_df$dataset=="oct1_rescaled",]$dataset <- "OCT1"
 plot_model_stats_df[plot_model_stats_df$dataset=="Kir21_surface_abundance_rescaled",]$dataset <- "Kir2.1 Surf"
@@ -609,7 +898,10 @@ plot_model_stats_df$dataset <- as.factor(plot_model_stats_df$dataset)
 ```
 
 ```{r}
-plot_model_stats_df <- plot_model_stats_df[plot_model_stats_df$model == "Lilace" | plot_model_stats_df$model == "Lilace (no pos/rep_q)",]
+plot_model_stats_df <- plot_model_stats_df[plot_model_stats_df$model == "Lilace" | 
+                                           plot_model_stats_df$model == "Lilace (no pos/rep_q)" |
+                                           plot_model_stats_df$model == "Lilace VI" |
+                                           plot_model_stats_df$model == "Lilace VI (MV)",]
 p <- ggplot(plot_model_stats_df, aes(x=dataset, y=runtime_numeric, col=model)) + 
   geom_point(size=2) +
   scale_shape_manual(values=1:nlevels(plot_model_stats_df$dataset)) +
@@ -622,7 +914,3 @@ p <- ggplot(plot_model_stats_df, aes(x=dataset, y=runtime_numeric, col=model)) +
 ggsave(paste0("data_figures/runtime.png"), p, height=4, width=10)
 
 ```
-
-
-
-

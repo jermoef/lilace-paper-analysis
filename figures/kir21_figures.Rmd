@@ -55,10 +55,11 @@ sd_cols <- c(NA,"enrich_SE", "weight_effect_se", "ML_effect_se")
 c_thresh <- 0.95
 kir21_rescaled_fit_df_called <- label_significant(kir21_rescaled_fit_df, effect_cols, sd_cols, 0.95)
 
-kir21_method_df <- distinct(kir21_rescaled_fit_df_called[c("hgvs", 
+kir21_method_df <- distinct(kir21_rescaled_fit_df_called[c("hgvs", "total_counts",
                                                          "enrich_score", "enrich_pval_adjusted", "enrich_score_disc", "enrich_score_syn_sd_disc",
-                                                         "weight_effect_mean", "weight_effect_mean_syn_sd_disc", "weight_effect_se")])
-colnames(kir21_method_df) <- c("hgvs", "enrich", "enrich_pval", "enrich_pval_disc", "enrich_syn_sd_disc", "weight_mean", "weight_mean_disc", "weight_mean_se")
+                                                         "weight_effect_mean", "weight_effect_mean_syn_sd_disc", 
+                                                         "weight_effect_mean_syn_sd_BH_disc", "weight_effect_se")])
+colnames(kir21_method_df) <- c("hgvs", "total_counts", "enrich", "enrich_pval", "enrich_pval_disc", "enrich_syn_sd_disc", "weight_mean", "weight_mean_disc", "weight_mean_BH_disc", "weight_mean_se")
 tsv_kir21 <- merge(tsv_kir21, kir21_method_df)
 
 
@@ -92,18 +93,25 @@ print(model_weight_scatter)
 model_weight_scatter <- plot_method_scatter(tsv_kir21, "effect", "weight_mean", "Lilace", "weighted bin", T)
 print(model_weight_scatter)
 
+tsv_kir21$weight_mean_BH <- tsv_kir21$weight_mean
+model_weight_scatter <- plot_method_scatter(tsv_kir21, "effect", "weight_mean_BH", "Lilace", "weighted bin", F)
+print(model_weight_scatter)
 
 ```
 
 
 ## GOF/LOF position plot 
 ```{r}
-comp_method <- "weight_mean_disc"
-comp_score <- "weight_mean"
-comp_name <- "Mean bin"
-# comp_method <- "enrich_pval_disc"
-# comp_score <- "enrich"
-# comp_name <- "Enrich2"
+# comp_method <- "weight_mean_disc"
+# comp_score <- "weight_mean"
+# comp_name <- "Mean bin"
+comp_method <- "enrich_pval_disc"
+comp_score <- "enrich"
+comp_name <- "Enrich2"
+
+# comp_method <- "weight_mean_BH_disc"
+# comp_score <- "weight_mean"
+# comp_name <- "Mean bin (BH)"
 
 tsv_kir21$discovery_cat <- ifelse(!is.na(tsv_kir21[[comp_method]]) & 
                                             tsv_kir21$discovery05 != 0 & 
@@ -202,10 +210,11 @@ p_gof <- ggplot(tsv_kir21, aes(x=position)) +
   geom_line(aes(y=pos_sum_both_gof, col="both"), alpha=0.5, lwd=set_lwd) +  
   geom_line(aes(y=pos_sum_2sd_gof, col=comp_name), alpha=0.5, lwd=set_lwd) +  
   geom_line(aes(y=pos_sum_model_gof, col="Lilace"), alpha=0.5, lwd=set_lwd) +
+  ylim(c(0,26)) +
   scale_color_manual(name = "Discovery set", values = scale_color) +
-  theme_cowplot() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20)) + ylab("# called GOF by position") + 
+  theme_cowplot() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20)) + ylab("# called GOF by pos") + 
   theme(axis.title.x = element_blank(), axis.text.x = element_blank()) +
-  theme(plot.margin = unit(c(0,0,0,0), "cm"), text = element_text(size = 20), axis.text = element_text(size = 20))
+  theme(plot.margin = unit(c(0,0,0,0), "cm"), text = element_text(size = 25), axis.text = element_text(size = 20))
 ggsave(paste0("data_figures/kir21/", pheno, "_pos_sig_gof_", comp_method, ".png"), p_gof, width=20)
 
 
@@ -229,10 +238,11 @@ p_lof <- ggplot(tsv_kir21, aes(x=position)) +
   geom_line(aes(y=pos_sum_both_lof, col="both"), alpha=0.5, lwd=set_lwd) +  
   geom_line(aes(y=pos_sum_2sd_lof, col=comp_name), alpha=0.5, lwd=set_lwd) +  
   geom_line(aes(y=pos_sum_model_lof, col="Lilace"), alpha=0.5, lwd=set_lwd) +
+  ylim(c(0,26)) +
   scale_y_reverse() +
   scale_color_manual(name = "Discovery set", values = scale_color) +
-  theme_cowplot() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20), position="top")+ ylab("# called LOF by position") +
-  theme(plot.margin = unit(c(0,0,0,0), "cm"), text = element_text(size = 20), axis.text = element_text(size = 20))
+  theme_cowplot() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20), position="top")+ ylab("# called LOF by pos") +
+  theme(plot.margin = unit(c(0,0,0,0), "cm"), text = element_text(size = 25), axis.text = element_text(size = 20))
 ggsave(paste0("data_figures/kir21/", pheno, "_pos_sig_lof_", comp_method, ".png"), p_lof, width=20)
 
 # combine plots
@@ -252,6 +262,58 @@ p <- ggplot(avg_pos_df, aes(x=position,y=mean_pos_weight_se)) + geom_point() + g
 print(p)
 ggsave(paste0("data_figures/kir21/pos_weight_se_", pheno, ".png"))
 
+
+
+```
+
+## Discovery set by coverage
+```{r}
+
+comp_method <- "enrich_pval_disc"
+comp_score <- "enrich"
+comp_name <- "Enrich2"
+
+# comp_method <- "weight_mean_disc"
+# comp_score <- "weight_mean"
+# comp_name <- "Mean bin"
+
+# comp_method <- "weight_mean_BH_disc"
+# comp_score <- "weight_mean"
+# comp_name <- "Mean bin (BH)"
+# tsv_kir21$weight_mean_BH <- tsv_kir21$weight_mean
+
+tsv_kir21$effect_both <- ifelse(tsv_kir21$discovery05 != 0 & tsv_kir21[[comp_method]], 1, 0)
+tsv_kir21$effect_comp <- ifelse(tsv_kir21$discovery05 == 0 & tsv_kir21[[comp_method]], 1, 0)
+tsv_kir21$effect_lilace <- ifelse(tsv_kir21$discovery05 != 0 & !tsv_kir21[[comp_method]], 1, 0)
+tsv_kir21$effect_neither <- ifelse(tsv_kir21$discovery05 == 0 & !tsv_kir21[[comp_method]], 1, 0)
+tsv_kir21$cov_call_cat <- as.factor(ifelse(tsv_kir21$effect_lilace, "Lilace", 
+                                    ifelse(tsv_kir21$effect_comp, 
+                                           comp_name, ifelse(tsv_kir21$effect_both, "both", "neither"))))
+call_colors <- setNames(c('#4e79a7', '#76b7b2', '#f28e2b', '#e15759'),# '#e15759'
+                          c("both", "neither", "Lilace", comp_name))
+tsv_kir21$cov_call_cat <- relevel(tsv_kir21$cov_call_cat, "Lilace")
+tsv_kir21$cov_call_cat <- relevel(tsv_kir21$cov_call_cat, comp_name)
+tsv_kir21$cov_call_cat <- relevel(tsv_kir21$cov_call_cat, "both")
+tsv_kir21$cov_call_cat <- relevel(tsv_kir21$cov_call_cat, "neither")
+tsv_kir21_cov <- tsv_kir21
+
+# tsv_kir21_cov[tsv_kir21_cov$cov_call_cat == "Lilace" | tsv_kir21_cov$cov_call_cat == comp_name,]
+p <- ggplot(tsv_kir21_cov, aes(x=total_counts, fill=cov_call_cat)) + geom_histogram(alpha=0.65, position = "stack", color="black", bins=25) + 
+  theme_cowplot() + scale_fill_manual(values=call_colors) + xlab("Total Variant Counts") + ylab("Freq") +
+  theme(text = element_text(size = 20), axis.text = element_text(size = 20)) +
+  guides(fill=guide_legend(title="Discovery calls", override.aes = list(alpha=1))) +
+  ggtitle(paste0("Lilace vs ", comp_name, " call differences by coverage"))
+print(p)
+ggsave(paste0("data_figures/kir21/", pheno, "_", comp_method, "_coverage.png"), p, height=6, width=9)
+
+call_colors <- setNames(c('#4e79a7', '#76b7b2', '#f28e2b', '#e15759'),# '#e15759'
+                          c("both", "neither", "Lilace", comp_name))
+p <- ggplot(tsv_kir21_cov, aes(x=weight_mean_se, fill=as.factor(cov_call_cat))) + geom_histogram(alpha=0.65, position = "stack", color="black", bins=25) + 
+  theme_cowplot() + scale_fill_manual(values=call_colors) + xlab("Mean Bin s.e.") + ylab("Freq") +
+  theme(text = element_text(size = 20), axis.text = element_text(size = 20)) +
+  guides(fill=guide_legend(title="Discovery calls", override.aes = list(alpha=1))) +
+  ggtitle(paste0("Lilace vs ", comp_name, " call differences by S.E."))
+ggsave(paste0("data_figures/kir21/", pheno, "_", comp_method, "_se.png"), p, height=6, width=9)
 
 
 ```
@@ -294,7 +356,7 @@ ggplot(syn_rank_plot_df, aes(x=enrich, y=effect, color=type)) + geom_point() + s
 ```{r}
 source("../../src/methods/diagnostics.R")
 source("../../src/plot_func.R")
-## Read in Kir21 resultsl
+## Read in Kir21 results
 
 tsv_kir21_all <- c()
 for (pheno in c("Abundance", "surface_abundance")) {
@@ -320,8 +382,8 @@ for (pheno in c("Abundance", "surface_abundance")) {
   
   kir21_method_df <- distinct(kir21_rescaled_fit_df_called[c("hgvs", 
                                                            "enrich_score", "enrich_pval_adjusted", "enrich_score_disc", "enrich_score_syn_sd_disc",
-                                                           "weight_effect_mean", "weight_effect_mean_syn_sd_disc")])
-  colnames(kir21_method_df) <- c("hgvs", "enrich", "enrich_pval", "enrich_pval_disc", "enrich_syn_sd_disc", "weight_mean", "weight_mean_disc")
+                                                           "weight_effect_mean", "weight_effect_mean_syn_sd_disc", "weight_effect_mean_syn_sd_BH_disc")])
+  colnames(kir21_method_df) <- c("hgvs", "enrich", "enrich_pval", "enrich_pval_disc", "enrich_syn_sd_disc", "weight_mean", "weight_mean_disc", "weight_mean_BH_disc")
   tsv_kir21 <- merge(tsv_kir21, kir21_method_df)
   
   # score and discovery heatmap
@@ -332,25 +394,31 @@ for (pheno in c("Abundance", "surface_abundance")) {
   # scoreDensity(tsv_kir21, "data_figures/kir21", score.col="effect", name=paste0("kir21_", pheno, "_score_histogram"), hist=T, scale.free=T)
   
   # comparison plots
+  if (pheno == "surface_abundance") pheno <- "Surface"
   tsv_kir21$enrich_disc <- tsv_kir21$enrich_pval_disc
   model_enrich_scatter <- plot_method_scatter(tsv_kir21, "effect", "enrich", "Lilace", "Enrich2", F, paste0("Enrich2 (p-val) vs Lilace ", pheno))
   print(model_enrich_scatter)
-  ggsave(paste0("data_figures/kir21/", pheno, "_scatter_enrich_pval.png"), model_enrich_scatter, width=9, height=6)
+  ggsave(paste0("data_figures/kir21/", pheno, "_scatter_enrich_pval.png"), model_enrich_scatter, width=6.75, height=4.5)
   model_enrich_scatter <- plot_method_scatter(tsv_kir21, "effect", "enrich", "Lilace", "Enrich2", T, paste0("Enrich2 (p-val) vs Lilace ", pheno))
   print(model_enrich_scatter)
   
   tsv_kir21$enrich_disc <- tsv_kir21$enrich_syn_sd_disc
   model_enrich_scatter <- plot_method_scatter(tsv_kir21, "effect", "enrich", "Lilace", "Enrich2", F, paste0("Enrich2 (2*syn sd) vs Lilace ", pheno))
   print(model_enrich_scatter)
-  ggsave(paste0("data_figures/kir21/", pheno, "_scatter_enrich_2sd.png"), model_enrich_scatter, width=9, height=6)
+  ggsave(paste0("data_figures/kir21/", pheno, "_scatter_enrich_2sd.png"), model_enrich_scatter, width=6.75, height=4.5)
   model_enrich_scatter <- plot_method_scatter(tsv_kir21, "effect", "enrich", "Lilace", "Enrich2", T, paste0("Enrich2 (2*syn sd) vs Lilace ", pheno))
   print(model_enrich_scatter)
   
   model_weight_scatter <- plot_method_scatter(tsv_kir21, "effect", "weight_mean", "Lilace", "Mean bin", F, paste0("Mean bin (2sd) vs Lilace ", pheno))
   print(model_weight_scatter)
-  ggsave(paste0("data_figures/kir21/", pheno, "_weight_2sd.png"), model_weight_scatter, width=9, height=6)
+  ggsave(paste0("data_figures/kir21/", pheno, "_weight_2sd.png"), model_weight_scatter, width=6.75, height=4.5)
   model_weight_scatter <- plot_method_scatter(tsv_kir21, "effect", "weight_mean", "Lilace", "mean bin 2sd", T, paste0("Weighted mean bin vs Lilace ", pheno))
   print(model_weight_scatter)
+  
+  tsv_kir21$weight_mean_BH <- tsv_kir21$weight_mean
+  model_weight_scatter <- plot_method_scatter(tsv_kir21, "effect", "weight_mean_BH", "Lilace", "Mean bin (BH)", F, paste0("Mean bin (BH) vs Lilace ", pheno))
+  print(model_weight_scatter)
+  ggsave(paste0("data_figures/kir21/", pheno, "_weight_BH.png"), model_weight_scatter, width=6.75, height=4.5)
   
   tsv_kir21_all <- rbind(tsv_kir21_all, tsv_kir21)
 }
@@ -358,7 +426,7 @@ for (pheno in c("Abundance", "surface_abundance")) {
 tsv_kir21_all <- tsv_kir21_all %>% pivot_wider(id_cols=c("hgvs", "wildtype", "position", "mutation", "type"), names_from="exp", 
                                                values_from=c("effect", "effect_se", "lfsr", "pos_effect", "pos_effect_se", "pos_sd", "pos_sd_se", 
                                                              "discovery05", "discovery10", "effect_disc", "enrich", "enrich_pval", "enrich_pval_disc", 
-                                                             "enrich_syn_sd_disc", "weight_mean", "weight_mean_disc"))
+                                                             "enrich_syn_sd_disc", "weight_mean", "weight_mean_disc", "weight_mean_BH", "weight_mean_BH_disc"))
 
 ```
 
@@ -415,22 +483,7 @@ for (dataset in datasets) {
 }
 
 
-# Kir2.1 AlphaMissense FNR check
 ```
-
-```{r}
-# Discovery comparison scatter(+contour)plots to weight and enrich2
-
-
-# note % diff
-```
-
-```{r}
-# 
-
-
-```
-
 
 ```{r}
 # multi phenotype comparison plots
@@ -458,6 +511,15 @@ tsv_kir21_all$enrich_pval_pheno_class <- apply(is_effect_cols, 1, function(x) {
 is_effect_cols <- tsv_kir21_all[,c("weight_mean_disc_abundance", "weight_mean_disc_surface_abundance")]
 names(is_effect_cols) <- c("abundance", "surface")
 tsv_kir21_all$weight_mean_pheno_class <- apply(is_effect_cols, 1, function(x) {
+  if (any(is.na(x))) {
+    return(NA)
+  } else {
+    return(paste(names(is_effect_cols)[x], collapse = ", "))
+  }
+})
+is_effect_cols <- tsv_kir21_all[,c("weight_mean_BH_disc_abundance", "weight_mean_BH_disc_surface_abundance")]
+names(is_effect_cols) <- c("abundance", "surface")
+tsv_kir21_all$weight_mean_BH_pheno_class <- apply(is_effect_cols, 1, function(x) {
   if (any(is.na(x))) {
     return(NA)
   } else {
@@ -493,7 +555,7 @@ sum(tsv_kir21_all$effect_pheno_class != tsv_kir21_all$weight_mean_pheno_class, n
 # make col for same or diff
 tsv_kir21_all$effect_vs_enrich_pval_pheno_class <- tsv_kir21_all$effect_pheno_class == tsv_kir21_all$enrich_pval_pheno_class
 tsv_kir21_all$effect_vs_weight_mean_pheno_class <- tsv_kir21_all$effect_pheno_class == tsv_kir21_all$weight_mean_pheno_class
-
+tsv_kir21_all$effect_vs_weight_mean_BH_pheno_class <- tsv_kir21_all$effect_pheno_class == tsv_kir21_all$weight_mean_BH_pheno_class
 
 ggplot(tsv_kir21_all[!is.na(tsv_kir21_all$effect_vs_enrich_pval_pheno_class),], 
        aes(effect_abundance, effect_surface_abundance, col=effect_vs_enrich_pval_pheno_class)) + geom_point(alpha=0.5) + theme_cowplot() +
@@ -529,6 +591,23 @@ ggplot(tsv_kir21_all_plot[!is.na(tsv_kir21_all_plot$effect_vs_weight_mean_pheno_
     guides(color=guide_legend(title="Same Classification as Lilace")) + scale_y_continuous(breaks = c(-0.5, -0.2, 0, 0.2))
 ggsave("data_figures/kir21/weight_pheno_comp.png", width=8, height=6)
 
+syn_surf_cutoff_top <- min(tsv_kir21_all[tsv_kir21_all$weight_mean_BH_disc_surface_abundance & tsv_kir21_all$weight_mean_BH_surface_abundance > 0,]$weight_mean_BH_surface_abundance, na.rm=T)
+syn_surf_cutoff_bot <- max(tsv_kir21_all[tsv_kir21_all$weight_mean_BH_disc_surface_abundance & tsv_kir21_all$weight_mean_BH_surface_abundance < 0,]$weight_mean_BH_surface_abundance, na.rm=T)
+syn_abun_cutoff_top <- min(tsv_kir21_all[tsv_kir21_all$weight_mean_BH_disc_abundance & tsv_kir21_all$weight_mean_BH_abundance > 0,]$weight_mean_BH_abundance, na.rm=T)
+syn_abun_cutoff_bot <- max(tsv_kir21_all[tsv_kir21_all$weight_mean_BH_disc_abundance & tsv_kir21_all$weight_mean_BH_abundance < 0,]$weight_mean_BH_abundance, na.rm=T)
+
+tsv_kir21_all_plot <- tsv_kir21_all %>% arrange(desc(effect_vs_weight_mean_BH_pheno_class))
+ggplot(tsv_kir21_all_plot[!is.na(tsv_kir21_all_plot$effect_vs_weight_mean_BH_pheno_class),], 
+       aes(weight_mean_abundance, weight_mean_surface_abundance, col=effect_vs_weight_mean_BH_pheno_class)) + geom_point(alpha=0.5, size=2) + 
+    geom_hline(yintercept=syn_surf_cutoff_bot, linetype='dashed', col = 'navy', lwd=0.5) +
+    geom_hline(yintercept=syn_surf_cutoff_top, linetype='dashed', col = 'navy', lwd=0.5) +
+    geom_vline(xintercept=syn_abun_cutoff_bot, linetype='dashed', col = 'navy', lwd=0.5) +
+    geom_vline(xintercept=syn_abun_cutoff_top, linetype='dashed', col = 'navy', lwd=0.5) +
+    theme_cowplot() + theme(legend.position="bottom", text = element_text(size = 20), axis.text = element_text(size = 20)) + scale_color_manual(values=c("TRUE" = "gray", "FALSE"="red")) +
+    xlab("Weighted Mean Bin Abundance") + ylab("Weighted Mean Bin Surface") +
+    guides(color=guide_legend(title="Same Classification as Lilace")) + scale_y_continuous(breaks = c(-0.5, -0.2, 0, 0.2))
+ggsave("data_figures/kir21/weight_BH_pheno_comp.png", width=8, height=6)
+
 # make plots for each method
 ggplot(tsv_kir21_all, aes(enrich_abundance, enrich_surface_abundance, col=enrich_pval_pheno_class)) + geom_point(alpha=0.5) + theme_bw() +
     theme(legend.position="bottom") + scale_color_brewer(palette = "Set3")
@@ -547,26 +626,24 @@ scoreHeatmap(tsv_kir21_all, "plots", score.col="weight_mean_pheno_class", name=p
 
 
 tsv_kir21_all$effect_pheno_class %>% table
-bothp = 3299 / (908 + 3299 + 1042)
-abundance_only = 908 / (908 + 3299 + 1042)
-surface_only = 1042 / (908 + 3299 + 1042)
+bothp = 3308 / (901 + 3308 + 1050)
+abundance_only = 901 / (901 + 3308 + 1050)
+surface_only = 1050 / (901 + 3308 + 1050)
 print(paste(bothp, abundance_only, surface_only))
-# bothp = 3258 / (943 + 3258 + 1007)
-# abundance_only = 943 / (943 + 3258 + 1007)
-# surface_only = 1007 / (943 + 3258 + 1007)
-# print(paste(bothp, abundance_only, surface_only))
 
 tsv_kir21_all$enrich_pval_pheno_class %>% table
-bothp = 4317 / (2165 + 4317 + 2059)
-abundance_only = 2165 / (2165 + 4317 + 2059)
-surface_only = 2059 / (2165 + 4317 + 2059)
+bothp = 4339 / (1991 + 4339 + 2164)
+abundance_only = 1991 / (1991 + 4339 + 2164)
+surface_only = 2164 / (1991 + 4339 + 2164)
 print(paste(bothp, abundance_only, surface_only))
-# bothp = 4318 / (2165 + 4318 + 2059)
-# abundance_only = 2165 / (2165 + 4318 + 2059)
-# surface_only = 2059 / (2165 + 4318 + 2059)
-# print(paste(bothp, abundance_only, surface_only))
 
 tsv_kir21_all$weight_mean_pheno_class %>% table
+bothp = 3448 / (1468 + 3448 + 948)
+abundance_only = 1468 / (1468 + 3448 + 948)
+surface_only = 948 / (1468 + 3448 + 948)
+print(paste(bothp, abundance_only, surface_only))
+
+tsv_kir21_all$weight_mean_BH_pheno_class %>% table
 bothp = 3448 / (1468 + 3448 + 948)
 abundance_only = 1468 / (1468 + 3448 + 948)
 surface_only = 948 / (1468 + 3448 + 948)

@@ -147,7 +147,8 @@ scoreHeatmap <- function(data,
       p <- ggplot(data = sub_data, aes(x = factor(.data[[pos.col]]), 
         y = factor(.data[[mut.col]], levels = aa.order), fill = .data[[score.col]])) +
         geom_tile(aes(color = factor(.data[[type.col]] == ctrl.name)), linewidth = 0.2) +
-        do.call(scale_fill_continuous_divergingx, c.args)
+        scale_fill_continuous_diverging(palette="Blue-Red", rev=T)
+        # do.call(scale_fill_continuous_divergingx, c.args)
     }
     p <- p + 
     # p <- ggplot(data = sub_data, aes(x = factor(.data[[pos.col]]), 
@@ -166,6 +167,8 @@ scoreHeatmap <- function(data,
         axis.text.y = element_text(size = y.text),
         axis.ticks = element_blank(),
         line = element_blank()
+        # panel.background = element_rect(fill = "silver")
+        # plot.background = element_rect(fill = "gray86"))
         # legend.position= legend,
         # legend.box = "horizontal"
       ) +
@@ -282,6 +285,7 @@ plot_method_scatter <- function(df_called, method1, method2, m1_name, m2_name, c
   plot_df$effect_col <- effect_col
   plot_df$effect_col[plot_df$effect_col=="effect"] <- "Lilace"
   plot_df$effect_col[plot_df$effect_col=="weight_mean"] <- "Mean bin"
+  plot_df$effect_col[plot_df$effect_col=="weight_mean_BH"] <- "Mean bin"
   plot_df$effect_col[plot_df$effect_col=="enrich"] <- "Enrich2"
   
   cat_counts <- plot_df[!is.na(plot_df$effect_col),] %>% group_by(effect_col) %>% summarise(count = n())
@@ -293,7 +297,7 @@ plot_method_scatter <- function(df_called, method1, method2, m1_name, m2_name, c
   
 
   call_colors <- setNames(c('#4e79a7', '#76b7b2', '#f28e2b', '#f28e2b', 
-                          '#e15759', '#e15759', '#e15759', '#e15759', '#e15759', '#e15759'),
+                          '#e15759', '#e15759', '#e15759', '#e15759', '#e15759', '#e15759', '#e15759'),
                           c("both", "neither", "Lilace", "effect_sep",
                           "effect_joint", "Mean bin", "weight_effect_mean_syn_sd", "ML_effect_mean", "ML_effect_mean_syn_sd", "Enrich2"))
   
@@ -385,37 +389,100 @@ plot_method_scatter <- function(df_called, method1, method2, m1_name, m2_name, c
   return(p)
 }
 
+make_sim_scatter <- function(yaml, res_dir, plot_dir, param, param_val, iter, effect_quantile=0) {
+  for (dataset in yaml$datasets) {
+    for (n_pos in yaml$n_pos_vals) {
+      sim_name <- paste0("sim_", dataset, "_", n_pos, "pos", "_", param, "_", param_val, "_", iter, "_rescaled")
+      sim_res_dir <- paste0(res_dir, "/sim_results/", sim_name)
+      sim_obj_name <- paste0("sim_obj_", dataset, "_", n_pos, "pos", "_", param, "_", param_val, "_", iter)
+      sim_obj <- readRDS(paste0(res_dir, "/param_data/", sim_obj_name, ".RData"))
+      effect_cutoff <- quantile(abs(sim_obj$effect_mat[sim_obj$effect_mat != 0]), probs=effect_quantile)
+      for (model in yaml$models) {
+        # get fit df
+        effect_cols <- c(paste0(model, "_mu_mean"), paste0(model, "_syn_recalibrated_mu_mean"), "enrich_score", "weight_effect_mean", "shep_effect_mean", "ML_effect_mean")
+        sd_cols <- c(NA, NA, "enrich_SE", "weight_effect_se", "shep_effect_se", "ML_effect_se")
+        if (model == "FACS_double_sample_repq") {
+          effect_cols <- c(effect_cols, "lilace_VI_normal_unrecal_mu_mean", "lilace_VI_normal_mu_mean", 
+                          "lilace_VI_multivariate_normal_unrecal_mu_mean", "lilace_VI_multivariate_normal_mu_mean")
+          sd_cols <- c(sd_cols, rep(NA, 4))
+        }
+        else if (model == "FACS_double_sample_repq_nopos") {
+          effect_cols <- c(effect_cols, "lilace_nopos_VI_normal_unrecal_mu_mean", "lilace_nopos_VI_normal_mu_mean", 
+                          "lilace_nopos_VI_multivariate_normal_unrecal_mu_mean", "lilace_nopos_VI_multivariate_normal_mu_mean")
+          sd_cols <- c(sd_cols, rep(NA, 4))
+        }
+        fit_df <- readRDS(paste0(sim_res_dir, "/baseline_", sim_name, "/fitted_df.RData"))
+        effect_df <- cbind(expand.grid(position = 1:ncol(sim_obj$effect_mat), mutation = 1:nrow(sim_obj$effect_mat)), effect=unlist(c(t(sim_obj$effect_mat))))
+        effect_df_merged <- merge(fit_df, effect_df)
+        # filter to one obs per variant to get FDR on variant scale
+        effect_df_merged <- effect_df_merged %>% group_by(hgvs) %>% filter(row_number() == 1)
+        for (method in effect_cols) {
+          if (method == "FACS_double_sample_repq_syn_recalibrated_mu_mean") {
+            method_name = "Lilace"
+          } else if (method == "lilace_VI_multivariate_normal_mu_mean") {
+            method_name = "Lilace (VI) (MV)"
+          } else if (method == "weight_effect_mean") {
+            method_name = "Mean Bin"
+          } else if (method == "ML_effect_mean") {
+            method_name = "ML"
+          } else if (method == "enrich_score") {
+            method_name = "Enrich2"
+          } else {
+            method_name = method
+          }
+          if (method %in% colnames(effect_df_merged)) {
+            p <- ggplot(effect_df_merged, aes(x=effect, y=get(method))) + geom_point() + theme_cowplot() +
+            xlab("Simulated Effect") + ylab(method_name)
+            ggsave(paste0(plot_dir, "/sim_cor_plots/", method, "_", param, ".png"), p, height=4, width=4)
+          }
+        }
+      }
+    }
+  }
+}
 
-make_cor_plots <- function(yaml, cor_df, outdir) {
+make_cor_plots <- function(yaml, cor_df, outdir, use_rank=F) {
+  if (use_rank) {
+    ylab_string <- "Spearman"
+  } else {
+    ylab_string <- "True Effect Corr"
+  }
   params <- unique(cor_df$param)
   for (dataset in yaml$datasets) {
     for (n_pos in yaml$n_pos_vals) {
       for (i in 1:length(params)) {
-        for (rescal in c(T)) {
-          cur_param <- params[i]
-          cur_cor_df <- cor_df[cor_df$dataset == dataset & cor_df$n_pos == n_pos & cor_df$param==cur_param & cor_df$is_rescaled==rescal,]
-          cor_df_summary <- cur_cor_df %>% group_by(param_val, method) %>% summarize(mean_corr = mean(corr), sd_corr = sd(corr))
-          cor_df_summary <- cor_df_summary[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|enrich2|approx", cor_df_summary$method),]
-          cor_df_summary$sample_ord <- factor(cor_df_summary$method, levels = c("Lilace", "Lilace\n(unrecalibrated)", "mean bin\n2sd", "mean bin\nnorm approx", "ML\n2sd", "ML\nnorm approx", "enrich2\n2sd", "enrich2\np-value"))
+        cur_param <- params[i]
+        for (param_val in unique(cor_df[cor_df$param==cur_param,]$param_val)) {
+          cur_cor_df <- cor_df[cor_df$dataset == dataset & cor_df$n_pos == n_pos & cor_df$param==cur_param & cor_df$is_rescaled==T,]
+          if (use_rank) {
+            cor_df_summary <- cur_cor_df %>% group_by(param_val, method) %>% summarize(mean_corr = mean(rank_corr, na.rm=T), sd_corr = sd(rank_corr, na.rm=T))
+          } else {
+            cor_df_summary <- cur_cor_df %>% group_by(param_val, method) %>% summarize(mean_corr = mean(corr, na.rm=T), sd_corr = sd(corr, na.rm=T))
+          }
+          # cor_df_summary <- cor_df_summary[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|enrich2|approx", cor_df_summary$method),]
+          cor_df_summary <- cor_df_summary[grepl("Lilace|ML|Mean Bin|Enrich2", cor_df_summary$method),]
+          cor_df_summary$sample_ord <- factor(cor_df_summary$method, levels = c("Lilace", "Lilace\nVI (MV)", "Mean Bin", "ML", "Enrich2"))
           if (cur_param == "default") {
              p_corr <- ggplot(cor_df_summary, aes(x=sample_ord, y=mean_corr)) + 
               geom_pointrange(aes(ymin = mean_corr - sd_corr, ymax = mean_corr + sd_corr), color="orange", size=1) +
               # geom_boxplot(width = 0.5, position = position_dodge(0.6), fill="orange") + 
               expand_limits(y=0) + 
-              theme_cowplot() + xlab("method") + ylab("True Effect Corr") + guides(color=guide_legend(title=cur_param)) +
-              scale_y_continuous(labels = scales::label_number(accuracy = 0.01))
+              theme_cowplot() + xlab("method") + ylab(ylab_string) + guides(color=guide_legend(title=cur_param)) +
+              scale_y_continuous(labels = scales::label_number(accuracy = 0.01)) +
+              coord_cartesian(ylim = c(0, 1))
           } else {
             p_corr <- ggplot(cor_df_summary, aes(x=sample_ord, y=mean_corr, color=as.factor(param_val))) + 
               expand_limits(y=0) + 
               geom_pointrange(aes(ymin = mean_corr - sd_corr, ymax = mean_corr + sd_corr), position = position_dodge2(0.5, preserve = "single"), size=0.75) +
               # geom_boxplot(width = 0.5, position = position_dodge(0.6)) + 
-              theme_cowplot() + xlab("method") + ylab("True Effect Corr") + guides(color=guide_legend(title=cur_param)) +
+              theme_cowplot() + xlab("method") + ylab(ylab_string) + guides(color=guide_legend(title=cur_param)) +
               # scale_colour_ptol() +
               scale_color_manual(values=c("#E69F00", "#0072B2", "#D55E00", "#009E73", "#CC79A7", "#56B4E9", "#F0E442", "#505050")) +
-              scale_y_continuous(labels = scales::label_number(accuracy = 0.01))
+              scale_y_continuous(labels = scales::label_number(accuracy = 0.01)) +
+              coord_cartesian(ylim = c(0, 1))
           }
           p <- p_corr + plot_layout(ncol=1, guides = "collect", widths = c(3, 3, 1)) & theme(text = element_text(size = 20), axis.text = element_text(size = 20))
-          ggsave(paste0(outdir, "/", dataset, n_pos, cur_param, rescal, "_boxes.png"), p, height=3, width=13)
+          ggsave(paste0(outdir, "/", dataset, n_pos, cur_param, rescal, "_boxes.png"), p, height=3.5, width=8.5)
         }
       }
     }
@@ -423,7 +490,7 @@ make_cor_plots <- function(yaml, cor_df, outdir) {
 }
 
 # make cross param FDR plots
-make_FDR_plots <- function(yaml, FDR_df, outdir, plot_mean_effect=T, axis_text_size=16, filter_methods=T) {
+make_FDR_plots <- function(yaml, FDR_df, outdir, plot_mean_effect=T, axis_text_size=16, filter_methods=T, only_lilace=F, dot_size=1, width=13) {
   params <- unique(FDR_df$param)
   for (dataset in yaml$datasets) {
     for (n_pos in yaml$n_pos_vals) {
@@ -436,73 +503,82 @@ make_FDR_plots <- function(yaml, FDR_df, outdir, plot_mean_effect=T, axis_text_s
           }
           FDR_df_summary <- cur_FDR_df %>% group_by(param_val, method) %>% summarize(mean_FDR = mean(FDR), mean_sens = mean(1-FNR), mean_FPR = mean(FPR),
                                                                                   sd_FDR = sd(FDR), sd_sens = sd(1-FNR), sd_FPR = sd(FPR))
-          
           if (filter_methods) {
-            FDR_df_summary <- FDR_df_summary[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|enrich2|approx", FDR_df_summary$method),]
-            FDR_df_summary$sample_ord <- factor(FDR_df_summary$method, levels = c("Lilace", "Lilace\n(unrecalibrated)", "mean bin\n2sd", "mean bin\nnorm approx", "ML\n2sd", "ML\nnorm approx", "enrich2\n2sd", "enrich2\np-value"))
+            FDR_df_summary <- FDR_df_summary[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|mean\ bin\nBH|enrich2|approx", FDR_df_summary$method),]
+            FDR_df_summary$sample_ord <- factor(FDR_df_summary$method, levels = c("Lilace", "Lilace\n(unrecalibrated)", "mean bin\nBH", "mean bin\n2sd", "ML\n2sd", "enrich2\n2sd", "enrich2\np-value"))
           } else {
-            FDR_df_summary$sample_ord <- factor(FDR_df_summary$method)
+            if (only_lilace) {
+              FDR_df_summary$sample_ord <- factor(FDR_df_summary$method, levels = c("Lilace", "Lilace VI", "Lilace VI (MV)",
+                                                                                    "Lilace\n(nopos)", "Lilace\n(nopos) VI", "Lilace\n(nopos) VI (MV)"))
+            } else {
+              FDR_df_summary$sample_ord <- factor(FDR_df_summary$method, levels = c("Lilace", "Lilace\n(unrecal)", 
+                                                                            "mean bin\nBH", "mean bin\n2sd", "mean bin\nfishers",  "mean bin\nsimes", 
+                                                                            "mean bin\nt-test",
+                                                                            "ML\nBH", "ML\n2sd", "ML\nfishers", "ML\nsimes",
+                                                                            "ML\nt-test", "enrich2\n2sd", "enrich2\np-value"
+                                                                            ))
+            }
           }
           # FDR_df_summary <- FDR_df_summary[grepl("Lilace|ML\n2sd|mean\ bin\n2sd|enrich2", FDR_df_summary$method),]
           # FDR_df_summary$sample_ord <- factor(FDR_df_summary$method, levels = c("Lilace", "Lilace\n(unrecalibrated)", "ML\n2sd", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
           if (cur_param == "default") {
              p_FDR <- ggplot(FDR_df_summary, aes(x=sample_ord, y=mean_FDR)) + 
-              geom_pointrange(aes(ymin = mean_FDR - sd_FDR, ymax = mean_FDR + sd_FDR), color="orange", size=1) +
+              geom_pointrange(aes(ymin = mean_FDR - sd_FDR, ymax = mean_FDR + sd_FDR), color="orange", size=dot_size) +
               # geom_boxplot(width = 0.5, position = position_dodge(0.6), fill="orange") + 
-              expand_limits(y=0) + 
+              scale_y_continuous(limits = c(0, NA)) + 
               theme_cowplot() + xlab("method") + ylab("FDR") + guides(color=guide_legend(title=cur_param)) +
               scale_y_continuous(labels = scales::label_number(accuracy = 0.01))
               # theme(axis.text.x = element_text(angle = 70, vjust = 0.3, hjust=1), legend.position = 'bottom')
 
              p_FNR <- ggplot(FDR_df_summary, aes(x=sample_ord, y=mean_sens)) + 
-             geom_pointrange(aes(ymin = mean_sens - sd_sens, ymax = mean_sens + sd_sens), color="orange", size=1) +
+             geom_pointrange(aes(ymin = mean_sens - sd_sens, ymax = mean_sens + sd_sens), color="orange", size=dot_size) +
               # geom_boxplot(width = 0.5, position = position_dodge(0.6), fill="orange") + 
-              expand_limits(y=0) + 
+              # scale_y_continuous(limits = c(0, 1)) + 
               theme_cowplot() + xlab("method") + ylab("Sensitivity") + guides(color=guide_legend(title=cur_param)) +
-              scale_y_continuous(labels = scales::label_number(accuracy = 0.01))
+              scale_y_continuous(labels = scales::label_number(accuracy = 0.01), limits = c(0, 1))
               # theme(axis.text.x = element_text(angle = 70, vjust = 0.3, hjust=1), legend.position = 'bottom')
 
             p_FPR <- ggplot(FDR_df_summary, aes(x=sample_ord, y=mean_FPR)) + 
-              geom_pointrange(aes(mean_FPR - sd_FPR, ymax = mean_FPR + sd_FPR), color="orange", size=1) +
+              geom_pointrange(aes(mean_FPR - sd_FPR, ymax = mean_FPR + sd_FPR), color="orange", size=dot_size) +
               # geom_boxplot(width = 0.5, position = position_dodge(0.6), fill="orange") + 
-              expand_limits(y=0) + 
+              # scale_y_continuous(limits = c(0, )) + 
               theme_cowplot() + xlab("method") + ylab("FPR") + guides(color=guide_legend(title=cur_param)) +
-              scale_y_continuous(labels = scales::label_number(accuracy = 0.01))
+              scale_y_continuous(labels = scales::label_number(accuracy = 0.01), limits = c(0, NA))
               # theme(axis.text.x = element_text(angle = 70, vjust = 0.3, hjust=1), legend.position = 'bottom')
           } else {
             p_FDR <- ggplot(FDR_df_summary, aes(x=sample_ord, y=mean_FDR, color=as.factor(param_val))) + 
               # expand_limits(y=0) + 
-              coord_cartesian(ylim = c(0, NA)) +
-              geom_pointrange(aes(ymin = mean_FDR - sd_FDR, ymax = mean_FDR + sd_FDR), position = position_dodge2(0.5, preserve = "single"), size=0.75) +
+              geom_pointrange(aes(ymin = mean_FDR - sd_FDR, ymax = mean_FDR + sd_FDR), position = position_dodge2(0.5, preserve = "single"), size=dot_size-0.25) +
               # geom_boxplot(width = 0.5, position = position_dodge(0.6)) + 
               theme_cowplot() + xlab("method") + ylab("FDR") + guides(color=guide_legend(title=cur_param)) +
               # scale_colour_ptol() +
               scale_color_manual(values=c("#E69F00", "#0072B2", "#D55E00", "#009E73", "#CC79A7", "#56B4E9", "#F0E442", "#505050")) +
-              scale_y_continuous(labels = scales::label_number(accuracy = 0.01))
+              scale_y_continuous(labels = scales::label_number(accuracy = 0.01), limits = c(0, NA))
               # theme(axis.text.x = element_text(angle = 70, vjust = 0.3, hjust=1), legend.position = 'bottom')
 
             p_FNR <- ggplot(FDR_df_summary, aes(x=sample_ord, y=mean_sens, color=as.factor(param_val))) + 
-              expand_limits(y=0) + 
-              geom_pointrange(aes(ymin = mean_sens - sd_sens, ymax = mean_sens + sd_sens), position = position_dodge2(0.5, preserve = "single"), size=0.75) +
+              # expand_limits(y=c(0, NA)) + 
+              geom_pointrange(aes(ymin = mean_sens - sd_sens, ymax = mean_sens + sd_sens), position = position_dodge2(0.5, preserve = "single"), size=dot_size-0.25) +
               # geom_boxplot(width = 0.5, position = position_dodge(0.6)) + 
               theme_cowplot() + xlab("method") + ylab("Sensitivity") + guides(color=guide_legend(title=cur_param)) +
               scale_color_manual(values=c("#E69F00", "#0072B2", "#D55E00", "#009E73", "#CC79A7", "#56B4E9", "#F0E442", "#505050")) +
-              scale_y_continuous(labels = scales::label_number(accuracy = 0.01))
+              scale_y_continuous(labels = scales::label_number(accuracy = 0.01), limits = c(0, 1))
               # theme(axis.text.x = element_text(angle = 70, vjust = 0.3, hjust=1), legend.position = 'bottom')
 
             p_FPR <- ggplot(FDR_df_summary, aes(x=sample_ord, y=mean_FPR, color=as.factor(param_val))) + 
-              expand_limits(y=0) + 
-              geom_pointrange(aes(mean_FPR - sd_FPR, ymax = mean_FPR + sd_FPR), position = position_dodge2(0.5, preserve = "single"), size=0.75) +
+              # expand_limits(y=c(0, NA)) + 
+              geom_pointrange(aes(mean_FPR - sd_FPR, ymax = mean_FPR + sd_FPR), position = position_dodge2(0.5, preserve = "single"), size=dot_size-0.25) +
               # geom_boxplot(width = 0.5, position = position_dodge(0.6)) + 
               theme_cowplot() + xlab("method") + ylab("FPR") + guides(color=guide_legend(title=cur_param)) +
               scale_color_manual(values=c("#E69F00", "#0072B2", "#D55E00", "#009E73", "#CC79A7", "#56B4E9", "#F0E442", "#505050")) +
-              scale_y_continuous(labels = scales::label_number(accuracy = 0.01))
+              scale_y_continuous(labels = scales::label_number(accuracy = 0.01), limits = c(0, NA))
               # theme(axis.text.x = element_text(angle = 70, vjust = 0.3, hjust=1), legend.position = 'bottom')
           }
 
           # p <- p_FDR + p_FNR + p_FPR + plot_layout(ncol=3, guides = "collect") + plot_annotation(title=paste(cur_param, ": ", dataset, n_pos, "pos", "rescaled:", rescal)) & theme(legend.position = 'bottom')
-          p <- p_FDR + p_FNR + guide_area() + plot_layout(ncol=3, guides = "collect", widths = c(3, 3, 1)) & theme(text = element_text(size = 20), axis.text = element_text(size = axis_text_size))
-          ggsave(paste0(outdir, "/", dataset, n_pos, cur_param, rescal, "_boxes.png"), p, height=3, width=13)
+          p <- p_FDR + p_FNR + guide_area() + plot_layout(ncol=3, guides = "collect", widths = c(3, 3, 1)) & theme(text = element_text(size = 19), axis.text = element_text(size = axis_text_size), axis.text.x = element_text(angle = 30, hjust = 1))
+          # ggsave(paste0(outdir, "/", dataset, n_pos, cur_param, rescal, "_boxes.png"), p, height=3, width=13)
+          ggsave(paste0(outdir, "/", dataset, n_pos, cur_param, rescal, "_boxes.png"), p, height=3.5, width=width)
 
         }
       }
@@ -510,6 +586,386 @@ make_FDR_plots <- function(yaml, FDR_df, outdir, plot_mean_effect=T, axis_text_s
   }
 }
 
+make_FDR_by_subset_dfs <- function(yaml, res_dir, param, param_val, c_thresh=0.95, probs=NULL, effect_quantile=0) {
+  rescal <- "_rescaled"
+  if (is.null(probs)) {
+    probs <- c(0.1, 0.25, 0.3, 0.4, 0.5, 0.75, 1)
+  }
+  effect_FDR_df <- c()
+  Lilace_effect_FDR_df <- c()
+  coverage_FDR_df <- c()
+  variance_FDR_df <- c()
+  for (dataset in yaml$datasets) {
+    for (n_pos in yaml$n_pos_vals) {
+      for (iter in 0:(yaml$n_iter-1)) {
+        sim_name <- paste0("sim_", dataset, "_", n_pos, "pos", "_", param, "_", param_val, "_", iter, "_rescaled")
+        sim_res_dir <- paste0(res_dir, "/sim_results/", sim_name)
+        sim_obj_name <- paste0("sim_obj_", dataset, "_", n_pos, "pos", "_", param, "_", param_val, "_", iter)
+        sim_obj <- readRDS(paste0(res_dir, "/param_data/", sim_obj_name, ".RData"))
+        effect_cutoff <- quantile(abs(sim_obj$effect_mat[sim_obj$effect_mat != 0]), probs=effect_quantile)
+        for (model in "FACS_double_sample_repq") {
+          # get fit df
+          effect_cols <- c(paste0(model, "_mu_mean"), paste0(model, "_syn_recalibrated_mu_mean"), "enrich_score", "weight_effect_mean", "shep_effect_mean", "ML_effect_mean")
+          sd_cols <- c(NA, NA, "enrich_SE", "weight_effect_se", "shep_effect_se", "ML_effect_se")
+          if (model == "FACS_double_sample_repq") {
+            effect_cols <- c(effect_cols, "lilace_VI_normal_unrecal_mu_mean", "lilace_VI_normal_mu_mean", 
+                            "lilace_VI_multivariate_normal_unrecal_mu_mean", "lilace_VI_multivariate_normal_mu_mean")
+            sd_cols <- c(sd_cols, rep(NA, 4))
+          }
+          else if (model == "FACS_double_sample_repq_nopos") {
+            effect_cols <- c(effect_cols, "lilace_nopos_VI_normal_unrecal_mu_mean", "lilace_nopos_VI_normal_mu_mean", 
+                            "lilace_nopos_VI_multivariate_normal_unrecal_mu_mean", "lilace_nopos_VI_multivariate_normal_mu_mean")
+            sd_cols <- c(sd_cols, rep(NA, 4))
+          }
+          fit_df <- readRDS(paste0(sim_res_dir, "/baseline_", sim_name, "/fitted_df.RData"))
+          fit_df_called <- label_significant(fit_df, 
+                                      effect_cols,
+                                      sd_cols, 
+                                      c_thresh)
+          effect_df <- cbind(expand.grid(position = 1:ncol(sim_obj$effect_mat), mutation = 1:nrow(sim_obj$effect_mat)), effect=unlist(c(t(sim_obj$effect_mat))))
+          effect_df_merged <- merge(fit_df_called, effect_df)
+          method_cols <- effect_cols
+          for (base_method in c("weight_effect_mean", "ML_effect_mean")) {
+            other_methods <- paste0(base_method, c("_syn_sd", "_syn_sd_BH", "_ttest", "_lik_simes", "_lik_fishers"))
+            method_cols <- c(method_cols, other_methods)
+          }
+          method_cols <- c(method_cols, "enrich_score_syn_sd")
+          # filter to one obs per variant to get FDR on variant scale
+          effect_df_merged <- effect_df_merged %>% group_by(hgvs) %>% filter(row_number() == 1)
+          for (method in method_cols) {
+            if (paste0(method, "_disc") %in% colnames(effect_df_merged)) {
+              print(method)
+              # get FDR by effect quantile (0, quintiles)
+              effect_cutoffs <- quantile(abs(effect_df_merged[effect_df_merged$effect!=0,]$weight_effect_mean), probs=probs)
+              for (i in 1:(length(effect_cutoffs))) {
+                max_cut <- effect_cutoffs[i]
+                max_cut_prob <- probs[i]
+                if (i > 1) {
+                  min_cut <- effect_cutoffs[i-1]
+                  min_cut_prob <- probs[i-1]
+                } else {
+                  min_cut <- 0
+                  min_cut_prob <- 0
+                }
+                bin_FDR_df <- effect_df_merged[abs(effect_df_merged$weight_effect_mean) >= min_cut & abs(effect_df_merged$weight_effect_mean) <= max_cut,]
+                # FDR--# of zero effect discoveries / # discoveries
+                disco_df <- bin_FDR_df[!is.na(bin_FDR_df[[paste0(method, "_disc")]]) & bin_FDR_df[[paste0(method, "_disc")]],]
+                FDR <- sum(disco_df$effect==0) / nrow(disco_df)
+                if (nrow(disco_df) == 0) {
+                  FDR <- 0
+                }
+                # FNR--# of nonzero effect nondiscoveries / # of nonzero effect
+                nonzero_effect_df <- bin_FDR_df[abs(bin_FDR_df$effect) > effect_cutoff,]
+                FNR <- sum(!is.na(nonzero_effect_df[[paste0(method, "_isnull")]]) & nonzero_effect_df[[paste0(method, "_isnull")]]) / nrow(nonzero_effect_df)
+                # FPR--# of zero effect discoveries / # of zero effects
+                FPR <- sum(disco_df$effect==0) / sum(bin_FDR_df$effect==0)
+                # compute sim metrics
+                is_rescaled <- rescal == "_rescaled"
+                model_FDR <- data.frame(dataset, n_pos, param, param_val, iter, method, is_rescaled, cutoff=i, as.numeric(min_cut_prob), as.numeric(max_cut_prob), FDR, FNR, FPR)
+                effect_FDR_df <- rbind(effect_FDR_df, model_FDR)
+              }
+              
+              # get FDR by effect quantile (0, quintiles)
+              effect_cutoffs <- quantile(abs(effect_df_merged[effect_df_merged$effect!=0,]$FACS_double_sample_repq_syn_recalibrated_mu_mean), probs=probs)
+              for (i in 1:(length(effect_cutoffs))) {
+                max_cut <- effect_cutoffs[i]
+                max_cut_prob <- probs[i]
+                if (i > 1) {
+                  min_cut <- effect_cutoffs[i-1]
+                  min_cut_prob <- probs[i-1]
+                } else {
+                  min_cut <- 0
+                  min_cut_prob <- 0
+                }
+                bin_FDR_df <- effect_df_merged[abs(effect_df_merged$FACS_double_sample_repq_syn_recalibrated_mu_mean) >= min_cut &
+                                                abs(effect_df_merged$FACS_double_sample_repq_syn_recalibrated_mu_mean) <= max_cut,]
+                # FDR--# of zero effect discoveries / # discoveries
+                disco_df <- bin_FDR_df[!is.na(bin_FDR_df[[paste0(method, "_disc")]]) & bin_FDR_df[[paste0(method, "_disc")]],]
+                FDR <- sum(disco_df$effect==0) / nrow(disco_df)
+                if (nrow(disco_df) == 0) {
+                  FDR <- 0
+                }
+                # FNR--# of nonzero effect nondiscoveries / # of nonzero effect
+                nonzero_effect_df <- bin_FDR_df[abs(bin_FDR_df$effect) > effect_cutoff,]
+                FNR <- sum(!is.na(nonzero_effect_df[[paste0(method, "_isnull")]]) & nonzero_effect_df[[paste0(method, "_isnull")]]) / nrow(nonzero_effect_df)
+                # FPR--# of zero effect discoveries / # of zero effects
+                FPR <- sum(disco_df$effect==0) / sum(bin_FDR_df$effect==0)
+                # compute sim metrics
+                is_rescaled <- rescal == "_rescaled"
+                model_FDR <- data.frame(dataset, n_pos, param, param_val, iter, method, is_rescaled, cutoff=i, as.numeric(min_cut_prob), as.numeric(max_cut_prob), FDR, FNR, FPR)
+                Lilace_effect_FDR_df <- rbind(Lilace_effect_FDR_df, model_FDR)
+              }
+
+              # get FDR by coverage quintiles
+              coverage_cutoffs <- quantile(effect_df_merged$mean_counts, probs=c(0.1, 0.25, 0.5, 0.75, 1))
+              for (i in 1:(length(coverage_cutoffs))) {
+                max_cut <- coverage_cutoffs[i]
+                max_cut_prob <- c(0.1, 0.25, 0.5, 0.75, 1)[i]
+                if (i > 1) {
+                  min_cut <- coverage_cutoffs[i-1]
+                  min_cut_prob <- c(0.1, 0.25, 0.5, 0.75, 1)[i-1]
+                } else {
+                  min_cut <- 0
+                  min_cut_prob <- 0
+                }
+                bin_FDR_df <- effect_df_merged[effect_df_merged$mean_counts >= min_cut & effect_df_merged$mean_counts <= max_cut,]
+                # FDR--# of zero effect discoveries / # discoveries
+                disco_df <- bin_FDR_df[!is.na(bin_FDR_df[[paste0(method, "_disc")]]) & bin_FDR_df[[paste0(method, "_disc")]],]
+                FDR <- sum(disco_df$effect==0) / nrow(disco_df)
+                if (nrow(disco_df) == 0) {
+                  FDR <- 0
+                }
+                # FNR--# of nonzero effect nondiscoveries / # of nonzero effect
+                nonzero_effect_df <- bin_FDR_df[abs(bin_FDR_df$effect) > effect_cutoff,]
+                FNR <- sum(!is.na(nonzero_effect_df[[paste0(method, "_isnull")]]) & nonzero_effect_df[[paste0(method, "_isnull")]]) / nrow(nonzero_effect_df)
+                # FPR--# of zero effect discoveries / # of zero effects
+                FPR <- sum(disco_df$effect==0) / sum(bin_FDR_df$effect==0)
+                # compute sim metrics
+                is_rescaled <- rescal == "_rescaled"
+                model_FDR <- data.frame(dataset, n_pos, param, param_val, iter, method, is_rescaled, cutoff=i, as.numeric(min_cut_prob), as.numeric(max_cut_prob), FDR, FNR, FPR)
+                coverage_FDR_df <- rbind(coverage_FDR_df, model_FDR)
+              }
+              
+              # get FDR by variance quintiles (weight se)
+              var_cutoffs <- quantile(effect_df_merged$weight_effect_se, probs=c(0.1, 0.25, 0.5, 0.75, 1))
+              for (i in 1:(length(var_cutoffs))) {
+                max_cut <- var_cutoffs[i]
+                max_cut_prob <- c(0.1, 0.25, 0.5, 0.75, 1)[i]
+                if (i > 1) {
+                  min_cut <- var_cutoffs[i-1]
+                  min_cut_prob <- c(0.1, 0.25, 0.5, 0.75, 1)[i-1]
+                } else {
+                  min_cut <- 0
+                  min_cut_prob <- 0
+                }
+                bin_FDR_df <- effect_df_merged[effect_df_merged$weight_effect_se >= min_cut & effect_df_merged$weight_effect_se <= max_cut,]
+                # FDR--# of zero effect discoveries / # discoveries
+                disco_df <- bin_FDR_df[!is.na(bin_FDR_df[[paste0(method, "_disc")]]) & bin_FDR_df[[paste0(method, "_disc")]],]
+                FDR <- sum(disco_df$effect==0) / nrow(disco_df)
+                if (nrow(disco_df) == 0) {
+                  FDR <- 0
+                }
+                # FNR--# of nonzero effect nondiscoveries / # of nonzero effect
+                nonzero_effect_df <- bin_FDR_df[abs(bin_FDR_df$effect) > effect_cutoff,]
+                FNR <- sum(!is.na(nonzero_effect_df[[paste0(method, "_isnull")]]) & nonzero_effect_df[[paste0(method, "_isnull")]]) / nrow(nonzero_effect_df)
+                if (nrow(nonzero_effect_df) == 0) {
+                  FNR <- 0
+                }
+                # FPR--# of zero effect discoveries / # of zero effects
+                FPR <- sum(disco_df$effect==0) / sum(bin_FDR_df$effect==0)
+                # compute sim metrics
+                is_rescaled <- rescal == "_rescaled"
+                model_FDR <- data.frame(dataset, n_pos, param, param_val, iter, method, is_rescaled, cutoff=i, as.numeric(min_cut_prob), as.numeric(max_cut_prob), FDR, FNR, FPR)
+                variance_FDR_df <- rbind(variance_FDR_df, model_FDR)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return(list(effect_FDR_df=effect_FDR_df, Lilace_effect_FDR_df=Lilace_effect_FDR_df,
+              coverage_FDR_df=coverage_FDR_df, variance_FDR_df=variance_FDR_df))
+}
+
+make_FDR_by_subset_plots <- function(df_list, plot_dir, axis_text_size=16) {
+  effect_FDR_df <- df_list$effect_FDR_df
+  Lilace_effect_FDR_df <- df_list$Lilace_effect_FDR_df
+  coverage_FDR_df <- df_list$coverage_FDR_df
+  variance_FDR_df <- df_list$variance_FDR_df
+  effect_FDR_summary <- effect_FDR_df %>% group_by(method, cutoff) %>% summarize(mean_FDR = mean(FDR), mean_FNR = mean(FNR), mean_FPR = mean(FPR), sd_FDR = sd(FDR), sd_FNR = sd(FNR), sd_FPR = sd(FPR), mean_sens = mean(1-FNR), sd_sens=sd(1-FNR), mean_min_cut = round(mean(as.numeric.min_cut_prob.), 3), mean_max_cut=round(mean(as.numeric.max_cut_prob.), 3))
+  effect_FDR_summary[is.na(effect_FDR_summary$sd_FDR),]$sd_FDR <- 0
+  effect_FDR_summary[is.na(effect_FDR_summary$sd_sens),]$sd_sens <- 0
+  effect_FDR_summary <- rename_methods(effect_FDR_summary)
+  # effect_FDR_summary$sample_ord <- factor(effect_FDR_summary$method, levels = c("Lilace", "Lilace VI (MV)", "mean bin\nBH", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+  effect_FDR_summary$sample_ord <- factor(effect_FDR_summary$method, levels = c("Lilace", "mean bin\nBH", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+  effect_FDR_summary <- effect_FDR_summary[!is.na(effect_FDR_summary$sample_ord),]
+  effect_FDR_summary$subset <- NA
+  effect_FDR_summary[effect_FDR_summary$mean_max_cut==0.2,]$subset <- "0-20%"
+  effect_FDR_summary[effect_FDR_summary$mean_max_cut==0.3,]$subset <- "20-30%"
+  effect_FDR_summary[effect_FDR_summary$mean_max_cut==0.4,]$subset <- "30-40%"
+  effect_FDR_summary[effect_FDR_summary$mean_max_cut==0.5,]$subset <- "40-50%"
+  effect_FDR_summary[effect_FDR_summary$mean_max_cut==1,]$subset <- "50-100%"
+
+  Lilace_effect_FDR_summary <- Lilace_effect_FDR_df %>% group_by(method, cutoff) %>% summarize(mean_FDR = mean(FDR), mean_FNR = mean(FNR), mean_FPR = mean(FPR), sd_FDR = sd(FDR), sd_FNR = sd(FNR), sd_FPR = sd(FPR), mean_sens = mean(1-FNR), sd_sens=sd(1-FNR), mean_min_cut = round(mean(as.numeric.min_cut_prob.), 3), mean_max_cut=round(mean(as.numeric.max_cut_prob.), 3))
+  Lilace_effect_FDR_summary[is.na(Lilace_effect_FDR_summary$sd_FDR),]$sd_FDR <- 0
+  Lilace_effect_FDR_summary[is.na(Lilace_effect_FDR_summary$sd_sens),]$sd_sens <- 0
+  Lilace_effect_FDR_summary <- rename_methods(Lilace_effect_FDR_summary)
+  Lilace_effect_FDR_summary$sample_ord <- factor(Lilace_effect_FDR_summary$method, levels = c("Lilace", "mean bin\nBH", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+  # Lilace_effect_FDR_summary$sample_ord <- factor(Lilace_effect_FDR_summary$method, levels = c("Lilace", "Lilace VI (MV)", "mean bin\nBH", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+  Lilace_effect_FDR_summary <- Lilace_effect_FDR_summary[!is.na(Lilace_effect_FDR_summary$sample_ord),]
+  Lilace_effect_FDR_summary$subset <- NA
+  Lilace_effect_FDR_summary[Lilace_effect_FDR_summary$mean_max_cut==0.2,]$subset <- "0-20%"
+  Lilace_effect_FDR_summary[Lilace_effect_FDR_summary$mean_max_cut==0.3,]$subset <- "20-30%"
+  Lilace_effect_FDR_summary[Lilace_effect_FDR_summary$mean_max_cut==0.4,]$subset <- "30-40%"
+  Lilace_effect_FDR_summary[Lilace_effect_FDR_summary$mean_max_cut==0.5,]$subset <- "40-50%"
+  Lilace_effect_FDR_summary[Lilace_effect_FDR_summary$mean_max_cut==1,]$subset <- "50-100%"
+
+  coverage_FDR_summary <- coverage_FDR_df %>% group_by(method, cutoff) %>% summarize(mean_FDR = mean(FDR), mean_FNR = mean(FNR), mean_FPR = mean(FPR), sd_FDR = sd(FDR), sd_FNR = sd(FNR), sd_FPR = sd(FPR), mean_sens = mean(1-FNR), sd_sens=sd(1-FNR), mean_min_cut = round(mean(as.numeric.min_cut_prob.), 3), mean_max_cut=round(mean(as.numeric.max_cut_prob.), 3))
+  coverage_FDR_summary[is.na(coverage_FDR_summary$sd_FDR),]$sd_FDR <- 0
+  coverage_FDR_summary[is.na(coverage_FDR_summary$sd_sens),]$sd_sens <- 0
+  coverage_FDR_summary <- rename_methods(coverage_FDR_summary)
+  coverage_FDR_summary$sample_ord <- factor(coverage_FDR_summary$method, levels = c("Lilace", "mean bin\nBH", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+  # coverage_FDR_summary$sample_ord <- factor(coverage_FDR_summary$method, levels = c("Lilace", "Lilace VI (MV)", "mean bin\nBH", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+  coverage_FDR_summary <- coverage_FDR_summary[!is.na(coverage_FDR_summary$sample_ord),]
+  coverage_FDR_summary$subset <- NA
+  coverage_FDR_summary[coverage_FDR_summary$mean_max_cut==0.1,]$subset <- "0-10%"
+  coverage_FDR_summary[coverage_FDR_summary$mean_max_cut==0.25,]$subset <- "10-25%"
+  coverage_FDR_summary[coverage_FDR_summary$mean_max_cut==0.5,]$subset <- "25-50%"
+  coverage_FDR_summary[coverage_FDR_summary$mean_max_cut==0.75,]$subset <- "50-75%"
+  coverage_FDR_summary[coverage_FDR_summary$mean_max_cut==1,]$subset <- "75-100%"
+
+  var_FDR_summary <- variance_FDR_df %>% group_by(method, cutoff) %>% summarize(mean_FDR = mean(FDR), mean_FNR = mean(FNR), mean_FPR = mean(FPR), sd_FDR = sd(FDR), sd_FNR = sd(FNR), sd_FPR = sd(FPR), mean_sens = mean(1-FNR), sd_sens=sd(1-FNR), mean_min_cut = round(mean(as.numeric.min_cut_prob.), 3), mean_max_cut=round(mean(as.numeric.max_cut_prob.), 3))
+  var_FDR_summary[is.na(var_FDR_summary$sd_FDR),]$sd_FDR <- 0
+  var_FDR_summary[is.na(var_FDR_summary$sd_sens),]$sd_sens <- 0
+  var_FDR_summary <- rename_methods(var_FDR_summary)
+  # var_FDR_summary$sample_ord <- factor(var_FDR_summary$method, levels = c("Lilace", "Lilace VI (MV)", "mean bin\nBH", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+  var_FDR_summary$sample_ord <- factor(var_FDR_summary$method, levels = c("Lilace", "mean bin\nBH", "mean bin\n2sd", "enrich2\n2sd", "enrich2\np-value"))
+  var_FDR_summary <- var_FDR_summary[!is.na(var_FDR_summary$sample_ord),]
+  var_FDR_summary$subset <- NA
+  var_FDR_summary[var_FDR_summary$mean_max_cut==0.1,]$subset <- "0-10%"
+  var_FDR_summary[var_FDR_summary$mean_max_cut==0.25,]$subset <- "10-25%"
+  var_FDR_summary[var_FDR_summary$mean_max_cut==0.5,]$subset <- "25-50%"
+  var_FDR_summary[var_FDR_summary$mean_max_cut==0.75,]$subset <- "50-75%"
+  var_FDR_summary[var_FDR_summary$mean_max_cut==1,]$subset <- "75-100%"
+
+
+  p_FDR <- ggplot(effect_FDR_summary, aes(x=sample_ord, y=mean_FDR, color=as.factor(subset))) + 
+              geom_pointrange(aes(ymin = mean_FDR - sd_FDR, ymax = mean_FDR + sd_FDR), position = position_dodge2(0.5, preserve = "single"), size=0.75) +
+              theme_cowplot() + xlab("method") + ylab("FDR") + guides(color=guide_legend(title="Mean bin effect")) +
+              scale_color_manual(values=c("#E69F00", "#0072B2", "#D55E00", "#009E73", "#CC79A7", "#56B4E9", "#F0E442", "#505050", "#BABABA")) +
+              scale_y_continuous(labels = scales::label_number(accuracy = 0.01), limits = c(0, NA))
+  p_FNR <- ggplot(effect_FDR_summary, aes(x=sample_ord, y=mean_sens, color=as.factor(subset))) + 
+                geom_pointrange(aes(ymin = mean_sens - sd_sens, ymax = mean_sens + sd_sens), position = position_dodge2(0.5, preserve = "single"), size=0.75) +
+                theme_cowplot() + xlab("method") + ylab("Sensitivity") + guides(color=guide_legend(title="Mean bin effect")) +
+                scale_color_manual(values=c("#E69F00", "#0072B2", "#D55E00", "#009E73", "#CC79A7", "#56B4E9", "#F0E442", "#505050", "#BABABA")) +
+                scale_y_continuous(labels = scales::label_number(accuracy = 0.01), limits = c(0, 1))
+  p <- p_FDR + p_FNR + guide_area() + plot_layout(ncol=3, guides = "collect", widths = c(3, 3, 1)) & theme(text = element_text(size = 18), axis.text = element_text(size = axis_text_size), axis.text.x = element_text(angle = 30, hjust = 0.8))
+  ggsave(paste0(plot_dir, "/subset_plots/effect_cutoff_boxes.png"), p, height=3.5, width=13)
+
+  p_FDR <- ggplot(Lilace_effect_FDR_summary, aes(x=sample_ord, y=mean_FDR, color=as.factor(subset))) + 
+              geom_pointrange(aes(ymin = mean_FDR - sd_FDR, ymax = mean_FDR + sd_FDR), position = position_dodge2(0.5, preserve = "single"), size=0.75) +
+              theme_cowplot() + xlab("method") + ylab("FDR") + guides(color=guide_legend(title="Lilace effect")) +
+              scale_color_manual(values=c("#E69F00", "#0072B2", "#D55E00", "#009E73", "#CC79A7", "#56B4E9", "#F0E442", "#505050", "#BABABA")) +
+              scale_y_continuous(labels = scales::label_number(accuracy = 0.01), limits = c(0, NA))
+  p_FNR <- ggplot(Lilace_effect_FDR_summary, aes(x=sample_ord, y=mean_sens, color=as.factor(subset))) + 
+                geom_pointrange(aes(ymin = mean_sens - sd_sens, ymax = mean_sens + sd_sens), position = position_dodge2(0.5, preserve = "single"), size=0.75) +
+                theme_cowplot() + xlab("method") + ylab("Sensitivity") + guides(color=guide_legend(title="Lilace effect")) +
+                scale_color_manual(values=c("#E69F00", "#0072B2", "#D55E00", "#009E73", "#CC79A7", "#56B4E9", "#F0E442", "#505050", "#BABABA")) +
+                scale_y_continuous(labels = scales::label_number(accuracy = 0.01), limits = c(0, 1))
+  p <- p_FDR + p_FNR + guide_area() + plot_layout(ncol=3, guides = "collect", widths = c(3, 3, 1)) & theme(text = element_text(size = 18), axis.text = element_text(size = axis_text_size), axis.text.x = element_text(angle = 30, hjust = 0.8))
+  ggsave(paste0(plot_dir, "/subset_plots/Lilace_effect_cutoff_boxes.png"), p, height=3.5, width=13)
+
+  p_FDR <- ggplot(coverage_FDR_summary, aes(x=sample_ord, y=mean_FDR, color=as.factor(subset))) + 
+              geom_pointrange(aes(ymin = mean_FDR - sd_FDR, ymax = mean_FDR + sd_FDR), position = position_dodge2(0.5, preserve = "single"), size=0.75) +
+              theme_cowplot() + xlab("method") + ylab("FDR") + guides(color=guide_legend(title="Coverage")) +
+              scale_color_manual(values=c("#E69F00", "#0072B2", "#D55E00", "#009E73", "#CC79A7", "#56B4E9", "#F0E442", "#505050")) +
+              scale_y_continuous(labels = scales::label_number(accuracy = 0.01), limits = c(0, NA))
+  p_FNR <- ggplot(coverage_FDR_summary, aes(x=sample_ord, y=mean_sens, color=as.factor(subset))) + 
+                geom_pointrange(aes(ymin = mean_sens - sd_sens, ymax = mean_sens + sd_sens), position = position_dodge2(0.5, preserve = "single"), size=0.75) +
+                theme_cowplot() + xlab("method") + ylab("Sensitivity") + guides(color=guide_legend(title="Coverage")) +
+                scale_color_manual(values=c("#E69F00", "#0072B2", "#D55E00", "#009E73", "#CC79A7", "#56B4E9", "#F0E442", "#505050")) +
+                scale_y_continuous(labels = scales::label_number(accuracy = 0.01), limits = c(0, 1))
+  p <- p_FDR + p_FNR + guide_area() + plot_layout(ncol=3, guides = "collect", widths = c(3, 3, 1)) & theme(text = element_text(size = 18), axis.text = element_text(size = axis_text_size), axis.text.x = element_text(angle = 30, hjust = 0.8))
+  ggsave(paste0(plot_dir, "/subset_plots/coverage_cutoff_boxes.png"), p, height=3.5, width=13)
+
+
+  p_FDR <- ggplot(var_FDR_summary, aes(x=sample_ord, y=mean_FDR, color=as.factor(subset))) + 
+              geom_pointrange(aes(ymin = mean_FDR - sd_FDR, ymax = mean_FDR + sd_FDR), position = position_dodge2(0.5, preserve = "single"), size=0.75) +
+              theme_cowplot() + xlab("method") + ylab("FDR") + guides(color=guide_legend(title="Mean Bin s.e.")) +
+              scale_color_manual(values=c("#E69F00", "#0072B2", "#D55E00", "#009E73", "#CC79A7", "#56B4E9", "#F0E442", "#505050")) +
+              scale_y_continuous(labels = scales::label_number(accuracy = 0.01), limits = c(0, NA))
+  p_FNR <- ggplot(var_FDR_summary, aes(x=sample_ord, y=mean_sens, color=as.factor(subset))) + 
+                geom_pointrange(aes(ymin = mean_sens - sd_sens, ymax = mean_sens + sd_sens), position = position_dodge2(0.5, preserve = "single"), size=0.75) +
+                theme_cowplot() + xlab("method") + ylab("Sensitivity") + guides(color=guide_legend(title="Mean Bin s.e.")) +
+                scale_color_manual(values=c("#E69F00", "#0072B2", "#D55E00", "#009E73", "#CC79A7", "#56B4E9", "#F0E442", "#505050")) +
+                scale_y_continuous(labels = scales::label_number(accuracy = 0.01), limits = c(0, 1))
+  p <- p_FDR + p_FNR + guide_area() + plot_layout(ncol=3, guides = "collect", widths = c(3, 3, 1)) & theme(text = element_text(size = 18), axis.text = element_text(size = axis_text_size), axis.text.x = element_text(angle = 30, hjust = 0.8))
+  ggsave(paste0(plot_dir, "/subset_plots/var_cutoff_boxes.png"), p, height=3.5, width=13)
+
+}
+
+
+
+make_prc_curve_df <- function(yaml, res_dir, plot_dir, param, param_val, c_thresh=0.95, effect_quantile=0) {
+  rescal <- "_rescaled"
+  prc_df <- c()
+  for (dataset in yaml$datasets) {
+    print(dataset)
+    for (n_pos in yaml$n_pos_vals) {
+      for (iter in 0:(yaml$n_iter-1)) {
+        print(iter)
+        try({
+          sim_name <- paste0("sim_", dataset, "_", n_pos, "pos", "_", param, "_", param_val, "_", iter, "_rescaled")
+          sim_res_dir <- paste0(res_dir, "/sim_results/", sim_name)
+          sim_obj_name <- paste0("sim_obj_", dataset, "_", n_pos, "pos", "_", param, "_", param_val, "_", iter)
+          sim_obj <- readRDS(paste0(res_dir, "/param_data/", sim_obj_name, ".RData"))
+          effect_cutoff <- quantile(abs(sim_obj$effect_mat[sim_obj$effect_mat != 0]), probs=effect_quantile)
+          for (model in "FACS_double_sample_repq") {
+            # get fit df
+            effect_cols <- c(paste0(model, "_mu_mean"), paste0(model, "_syn_recalibrated_mu_mean"), "enrich_score", "weight_effect_mean", "shep_effect_mean", "ML_effect_mean")
+            sd_cols <- c(NA, NA, "enrich_SE", "weight_effect_se", "shep_effect_se", "ML_effect_se")
+            if (model == "FACS_double_sample_repq") {
+              effect_cols <- c(effect_cols, "lilace_VI_normal_unrecal_mu_mean", "lilace_VI_normal_mu_mean", 
+                              "lilace_VI_multivariate_normal_unrecal_mu_mean", "lilace_VI_multivariate_normal_mu_mean")
+              sd_cols <- c(sd_cols, rep(NA, 4))
+            }
+            else if (model == "FACS_double_sample_repq_nopos") {
+              effect_cols <- c(effect_cols, "lilace_nopos_VI_normal_unrecal_mu_mean", "lilace_nopos_VI_normal_mu_mean", 
+                              "lilace_nopos_VI_multivariate_normal_unrecal_mu_mean", "lilace_nopos_VI_multivariate_normal_mu_mean")
+              sd_cols <- c(sd_cols, rep(NA, 4))
+            }
+            fit_df <- readRDS(paste0(sim_res_dir, "/baseline_", sim_name, "/fitted_df.RData"))
+            fit_df_called <- label_significant(fit_df, 
+                                        effect_cols,
+                                        sd_cols, 
+                                        c_thresh)
+            effect_df <- cbind(expand.grid(position = 1:ncol(sim_obj$effect_mat), mutation = 1:nrow(sim_obj$effect_mat)), effect=unlist(c(t(sim_obj$effect_mat))))
+            effect_df_merged <- merge(fit_df_called, effect_df)
+            method_cols <- c("FACS_double_sample_repq_syn_recalibrated_mu_mean", "lilace_VI_multivariate_normal_mu_mean", "weight_effect_mean_syn_sd_BH", "weight_effect_mean_syn_sd",
+                              "enrich_score", "enrich_score_syn_sd", "ML_effect_mean_syn_sd_BH")
+            prob_cols <- c("FACS_double_sample_repq_syn_recalibrated_mu_lfsr", "lilace_VI_multivariate_normal_mu_lfsr", "weight_effect_mean_syn_sd_pval_BH", "weight_effect_mean_syn_sd_pval", 
+                            "enrich_pval_adjusted", "enrich_score_syn_sd_pval", "ML_effect_mean_syn_sd_pval_BH")
+            # filter to one obs per variant to get FDR on variant scale
+            effect_df_merged <- effect_df_merged %>% group_by(hgvs) %>% filter(row_number() == 1)
+            for (i in 1:length(method_cols)) {
+              method <- method_cols[i]
+              prob_col <- prob_cols[i]
+              truth <- effect_df_merged$effect != 0
+              prob <- 1 - effect_df_merged[[prob_col]]
+              prc_df <- rbind(prc_df, cbind(dataset, n_pos, param, param_val, method, iter, truth, prob))
+            }
+          }
+        })
+      }
+    }
+  }
+  return(data.frame(prc_df))
+}
+
+make_prc_plots <- function(prc_df, plot_dir) {
+  for (dataset in unique(prc_df$dataset)) {
+    prc_dataset <- data.frame(prc_df[prc_df$dataset==dataset,])
+    prc_dataset$truth_val <- as.factor(ifelse(prc_dataset$truth, "True Effect", "No Effect"))
+    prc_dataset$prob <- as.numeric(prc_dataset$prob)
+    pr_curves_pvals <- prc_dataset %>%
+      group_by(method, iter) %>%
+      pr_curve(truth_val, prob, event_level = "second") # 'first' level is "True Alternative"
+
+    p <- ggplot(pr_curves_pvals, aes(x = recall, y = precision, color = method)) +
+      geom_line(aes(group = iter), alpha = 0.4, linewidth = 1) +
+      labs(
+        title = "Precision-Recall Curves for Discovery Using P-values",
+        subtitle = "Each line represents one simulation iteration per method",
+        x = "Recall (Sensitivity)",
+        y = "Precision (1 - False Discovery Rate)",
+        color = "Method"
+      ) +
+      coord_fixed(xlim = c(0, 1), ylim = c(0, 1)) +
+      theme_minimal()
+    ggsave(paste0(plot_dir, "/prc_plots/", dataset, ".png"))
+  }
+}
 
 # plot cross sig metrics (FDR-FNR, precision-recall, FDR-sens)
 make_cross_sig_plots <- function(yaml, sig_FDR_df, outdir, plot_mean_effect=T) {
@@ -527,31 +983,30 @@ make_cross_sig_plots <- function(yaml, sig_FDR_df, outdir, plot_mean_effect=T) {
         
         FDR_FNR_df_summary <- cur_FDR_FNR_df %>% group_by(method, sig_cutoff) %>% summarize(mean_FDR = mean(FDR), mean_FNR = mean(FNR), mean_FPR = mean(FPR), sd_FDR = sd(FDR), sd_FNR = sd(FNR), sd_FPR = sd(FPR), mean_sens = mean(sens), sd_sens=sd(sens))
         # FDR-FNR plot
-        p_FDR_FNR <- ggplot(FDR_FNR_df_summary, aes(x=mean_FDR, y=mean_FNR, col=method)) + geom_point() + geom_line(lwd=1) + 
+        p_FDR_FNR <- ggplot(FDR_FNR_df_summary, aes(x=mean_FDR, y=mean_FNR, col=method)) + geom_point() + geom_path(lwd=1) + 
           ggtitle(paste("FDR-FNR: ", dataset, n_pos, "pos", "rescaled:", rescal)) +
           scale_color_manual(values=c("#967662", "#85b6b2",  "#5778a4", "#a87c9f", "#6a9f58", 
           "#d1615d", "#f1a2a9", "#b8b0ac", "#fc7d0b", "#3a4032", "#47817f", "#ed5e93", "#adbe77", "#cda211")) +
-          theme_cowplot() + scale_color_tableau()
+          theme_cowplot()
         print(p_FDR_FNR)
         ggsave(paste0(outdir, "/", dataset, n_pos, param, param_val, rescal, "FDR-FNR", ".png"), p_FDR_FNR)
         
         # precision -recall (1-FDR and sens)
-        p_prec_recall <- ggplot(FDR_FNR_df_summary, aes(x=1-mean_FDR, y=mean_sens, col=method)) + geom_point() + geom_line(lwd=1) + 
+        p_prec_recall <- ggplot(FDR_FNR_df_summary, aes(x=1-mean_FDR, y=mean_sens, col=method)) + geom_point() + geom_path(lwd=1) + 
           ggtitle(paste("prec-recall: ", dataset, n_pos, "pos", "rescaled:", rescal)) +
           scale_color_manual(values=c("#967662", "#85b6b2",  "#5778a4", "#a87c9f", "#6a9f58", 
           "#d1615d", "#f1a2a9", "#b8b0ac", "#fc7d0b", "#3a4032", "#47817f", "#ed5e93", "#adbe77", "#cda211")) +
-          theme_cowplot() + scale_color_tableau()
+          theme_cowplot() # + scale_color_tableau(palette = "Tableau 20")
         print(p_prec_recall)
         ggsave(paste0(outdir, "/", dataset, n_pos, param, param_val, rescal, "FDR-recall", ".png"), p_prec_recall)
         
         # FDR-sensitivity plot
-        p_FDR_sens <- ggplot(FDR_FNR_df_summary, aes(x=mean_FDR, y=mean_sens, col=method)) + geom_point() + geom_line(lwd=1) + 
+        p_FDR_sens <- ggplot(FDR_FNR_df_summary, aes(x=mean_FDR, y=mean_sens, col=method)) + geom_point() + geom_path(lwd=1) + 
           # ggtitle(paste("FDR-sensitivity: ", dataset)) +
           scale_color_manual(values=c("#967662", "#85b6b2",  "#5778a4", "#a87c9f", "#6a9f58", 
           "#d1615d", "#f1a2a9", "#b8b0ac", "#fc7d0b", "#3a4032", "#47817f", "#ed5e93", "#adbe77", "#cda211")) +
-          theme_cowplot() + scale_color_tableau() + theme(text = element_text(size = 14), axis.text = element_text(size = 12)) +
-          xlab("Mean FDR") + ylab("Mean Sensitivity")
-        print(p_FDR_sens)
+          theme_cowplot() + theme(text = element_text(size = 14), axis.text = element_text(size = 12)) +
+          xlab("Mean FDR") + ylab("Mean Sensitivity") + ylim(c(min(FDR_FNR_df_summary[FDR_FNR_df_summary$method=="Lilace",]$mean_sens), NA))
         
         ggsave(paste0(outdir, "/", dataset, n_pos, param, param_val, rescal, "FDR-sens", ".png"), p_FDR_sens, height=6, width=11)
       }
@@ -583,6 +1038,7 @@ make_rank_FDR_plots <- function(yaml, rank_FDR_df, outdir, plot_mean_effect=T) {
           theme_bw()
 
         ggsave(paste0(outdir, "/", dataset, n_pos, param, param_val, rescal, "rank_FDR", ".png"), p)
+        # ggsave(paste0(plot_dir, "/FDR_rank.png"), p)
         
         p <- ggplot(cur_rank_df_sum, aes(x=rank_cutoff, y=mean_FNR, col=method)) + geom_point() + geom_line(lwd=1) + 
           # geom_ribbon(aes(ymin = mean_FNR - 2*sd_FNR, ymax = mean_FNR + 2*sd_FNR, color=method, fill=method), alpha=0.1) +
@@ -624,8 +1080,10 @@ make_disc_FDR_boxplots <- function(yaml, disc_FDR_df, n_discoveries, outdir, plo
                       sd_FDR = sd(FDR), sd_FNR = sd(FNR), sd_FPR = sd(FPR),
                       mean_sens = mean(sens), sd_sens=sd(sens))
           cur_FDR_FNR_df <- merge(cur_FDR_FNR_df, FDR_FNR_df_summary)
+          # cur_FDR_FNR_df <- cur_FDR_FNR_df %>% filter(!stringr::str_detect(method, "mean_effect"))
           p <- ggplot(cur_FDR_FNR_df, aes(x=mean_FDR, y=sens, col=method)) + geom_boxplot(width=0.0075, position = position_dodge(preserve = "single")) + theme_cowplot() + xlab(paste0("mean FDR at ", n_discoveries, " discoveries")) + ylab("sensitivity") + ggtitle(paste(dataset, n_pos, "positions"))
           ggsave(paste0(outdir, "/", dataset, n_pos, param, param_val, rescal, "n_discoveries", n_discoveries, "_full.png"), p)
+          # print(p)
         }
       }
     }
@@ -659,6 +1117,8 @@ make_ranked_masked_FDR_plots <- function(rank_FDR_df, dataset, outdir, plot_mean
   p <- ggplot(cur_rank_df_sum, aes(x=rank_cutoff, y=N_syn_called, col=method)) + geom_point() + geom_line(lwd=1) +
     ggtitle(paste("Proportion masked synonymous called incorrectly by rank: ", dataset)) +
     scale_color_manual(values=c("#505050", "#E69F00", "#0072B2", "#D55E00", "#009E73", "#CC79A7", "#56B4E9", "#F0E442")) +
+    # scale_color_manual(values=c("#967662", "#85b6b2",  "#5778a4", "#a87c9f", "#6a9f58", 
+    # "#d1615d", "#f1a2a9", "#b8b0ac", "#fc7d0b", "#3a4032", "#47817f", "#ed5e93", "#adbe77", "#cda211")) +
     theme_bw()
   ggsave(paste0(outdir, "/", dataset, "_masked_syn_ranked", ".png"), p)
 }

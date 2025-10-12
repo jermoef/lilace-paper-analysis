@@ -29,15 +29,24 @@ rule run_model:
     resources:
         h_rt="23:30:00",
         mem_mb=8000,
-        disk_mb=8000,
+        disk_mb=8000
         # highp=""
-    # resources:
-    #     h_rt="45:30:00",
-    #     mem_mb=16000,
-    #     disk_mb=16000,
-    #     highp=""
     shell:
-        f"Rscript scripts/run_model.R {{input.modelfile}} {{input.baseline_modelfile}} {{input.data}} {{input.baseline}} {{input.desc}} {config['selfphi']} {{output.stanfit}} {{output.out_df}} {{output.input_file}} {{params.plot_dir}}"
+        f"Rscript scripts/run_model2.R {{input.modelfile}} {{input.baseline_modelfile}} {{input.data}} {{input.baseline}} {{input.desc}} {config['selfphi']} {{output.stanfit}} {{output.out_df}} {{output.input_file}} {{params.plot_dir}}"
+
+rule run_model_VI:
+    input:
+        out_df=f"{RES_DIR}/{{data}}/baseline_{{baseline}}/{{model}}_df.RData"
+    output:
+        out_df_VI=f"{RES_DIR}/{{data}}/baseline_{{baseline}}/{{model}}_df_withVI.RData"
+    params:
+        plot_dir=directory(f"{RES_DIR}/{{data}}/baseline_{{baseline}}/{{model}}_plots")
+    resources:
+        h_rt="1:00:00",
+        mem_mb=8000,
+        disk_mb=8000
+    shell:
+        f"Rscript scripts/run_model_VI.R {{input.out_df}} {{output.out_df_VI}} {{params.plot_dir}} {config['conda_path']}"
 
 rule summarize_model:
     input:
@@ -79,7 +88,7 @@ rule run_methods:
 
 rule combine_fits:
     input:
-       expand("%s/{{data}}/baseline_{{baseline}}/{model}_df.RData" % RES_DIR, model=config['models']),
+       expand("%s/{{data}}/baseline_{{baseline}}/{model}_df_withVI.RData" % RES_DIR, model=config['models']),
        f"{RES_DIR}/{{data}}/methods_df.RData"
     output:
         f"{RES_DIR}/{{data}}/baseline_{{baseline}}/fitted_df.RData",

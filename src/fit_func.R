@@ -147,6 +147,14 @@ fit_overall <- function(obs_df, model_file,
       input <- list(V = V, S = S, N = N, N_syn=N_syn, P=P, R=R, nMAPv = nMAPv, vMAPs = vMAPs, nMAPr = nMAPr, vMAPp = vMAPp, sMAPr=sMAPr, 
                 n_counts=n_counts, n_syn_counts=n_syn_counts, K = K, y = y, y_syn = y_syn)
       init <- list(list(sigma=rep(1, P-1)), list(sigma=rep(1, P-1)), list(sigma=rep(1, P-1)), list(sigma=rep(1, P-1)))
+    } else if (basename(model_file) == "FACS_double_sample_repq_variational.stan" ||
+        basename(model_file) == "FACS_double_sample_repq_variational_full.stan") {
+      input <- list(V = V, S = S, N = N, N_syn=N_syn, P=P, R=R, nMAPv = nMAPv, vMAPs = vMAPs, nMAPr = nMAPr, vMAPp = vMAPp, sMAPr=sMAPr, 
+                n_counts=n_counts, n_syn_counts=n_syn_counts, K = K, y = y, y_syn = y_syn)
+      # init <- list(list(sigma=rep(1, P-1)), list(q=rep(1/K, K)), list(sigma_syn=1), list(theta=rep(0, P-1)), list(z=rep(0, V)),
+      #              list(theta_syn=rep(0,S)), list(a=rep(1, R)), list(b=rep(0.01, R)))
+      init <- list(list(sigma=rep(1, P-1), q=matrix(rep(1/K, K*3), nrow=3), sigma_syn=1, theta=rep(0, P-1), z=rep(0, V),
+                   theta_syn=rep(0,S), a=rep(1, R), b=rep(0.01, R)))
     } else if (basename(model_file) == "FACS_double_sample_repq_nopos.stan") {
       input <- list(V = V, S = S, N = N, N_syn=N_syn, P=P, R=R, nMAPv = nMAPv, vMAPs = vMAPs, nMAPr = nMAPr, vMAPp = vMAPp, sMAPr=sMAPr, 
                 n_counts=n_counts, n_syn_counts=n_syn_counts, K = K, y = y, y_syn = y_syn)
@@ -164,14 +172,37 @@ fit_overall <- function(obs_df, model_file,
     }
     mod <- cmdstan_model(model_file)
     
-    fit <- mod$sample(
-    data = input,
-    chains = 4,
-    parallel_chains = 4,
-    refresh = 500,
-    seed = seed,
-    init=init
-    )
+    if (basename(model_file) == "FACS_double_sample_repq_variational.stan" ||
+        basename(model_file) == "FACS_double_sample_repq_variational_full.stan") {
+      if (basename(model_file) == "FACS_double_sample_repq_variational.stan") {
+        algorithm <- "meanfield"
+      } else {
+        algorithm <- "fullrank"
+      }
+      max_lp <- -Inf
+      fit <- NA
+      for (restart in 1:10) {
+        curr_fit <- mod$variational(
+          data = input,
+          init = init,
+          algorithm=algorithm
+        )
+        print(curr_fit$output())
+        if (curr_fit$lp_approx() > max_lp) {
+          fit <- curr_fit
+        }
+      }
+    } else {
+      fit <- mod$sample(
+        data = input,
+        chains = 4,
+        parallel_chains = 4,
+        refresh = 500,
+        seed = seed,
+        init=init
+      )
+    }
+    
     saveRDS(input, file = input_file)
     print("Summarizing posteriors")
     # summarize

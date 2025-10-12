@@ -85,6 +85,21 @@ if ("ML" %in% methods) {
     df$ML_mean <- NA
     df$ML_sd <- NA
 
+    df$syn_ML_mean <- NA
+    df$syn_ML_sd <- NA
+    for (rep in unique(df$rep)) {
+        syn_counts <- df[df$type=="synonymous" & df$rep==rep,] %>% ungroup() %>% select(starts_with("c_"))
+        print(head(syn_counts))
+        opt_out <- optim(c(1000, 6.5), function(theta) cdf_lik_log_multi(theta, as.matrix(syn_counts), breaks, cdf=plnorm))
+        if (opt_out$convergence == 0) {
+            params <- opt_out$par
+        } else {
+            params <- c(NA, NA)
+        }
+        df[df$type=="synonymous" & df$rep==rep,]$syn_ML_mean <- params[1]
+        df[df$type=="synonymous" & df$rep==rep,]$syn_ML_sd <- exp(params[2])
+    }
+
     for (i in 1:length(vars)) {
         var <- vars[i]
         var_df <- df[df$hgvs_exp==var,]
@@ -96,6 +111,35 @@ if ("ML" %in% methods) {
         } 
         df[df$hgvs_exp==var,]$ML_mean <- params[1]
         df[df$hgvs_exp==var,]$ML_sd <- exp(params[2])
+    }
+    df$ML_mean_indiv <- NA
+    df$ML_sd_indiv <- NA
+    for (i in 1:nrow(df)) {
+        counts <- as.numeric(df[i,] %>% ungroup() %>% select(starts_with("c_")))
+        params <- c(NA, NA)
+        opt_out <- optim(c(1000, 6.5), function(theta) cdf_lik_log(theta, counts, breaks, cdf=plnorm))
+        if (opt_out$convergence == 0) {
+            params <- opt_out$par
+        } 
+        df[i,]$ML_mean_indiv <- params[1]
+        df[i,]$ML_sd_indiv <- exp(params[2])
+    }
+    # get likelihoods
+    df$ML_syn_lik <- NA
+    df$ML_param_lik <- NA
+    for (rep in unique(df$rep)) {
+        # get syn ML params for each replicate
+        syn_ML_mean <- unique(df[df$type=="synonymous" & df$rep == rep,]$syn_ML_mean)
+        syn_ML_sd <- unique(df[df$type=="synonymous" & df$rep == rep,]$syn_ML_sd)
+        for (i in 1:nrow(df[df$rep==rep,])) {
+            counts <- as.numeric(df[df$rep==rep,][i,] %>% ungroup() %>% select(starts_with("c_")))
+            param_ML_mean <- df[df$rep==rep,][i,]$ML_mean_indiv
+            param_ML_sd <- df[df$rep==rep,][i,]$ML_sd_indiv
+            lik_syn <- cdf_lik_log(c(syn_ML_mean, log(syn_ML_sd)), counts, breaks, cdf=plnorm)
+            lik_param <- cdf_lik_log(c(param_ML_mean, log(param_ML_sd)), counts, breaks, cdf=plnorm)
+            df[df$rep==rep,][i,"ML_syn_lik"] <- lik_syn
+            df[df$rep==rep,][i,"ML_param_lik"] <- lik_param
+        }
     }
     end <- Sys.time()
     print(end-start)
@@ -153,6 +197,7 @@ for (i in 1:length(vars)) {
         shep_effect_se <- sd(shep_effects, na.rm=T)
         df[df$hgvs_exp==var,"shep_effects"] <- shep_effects
         df[df$hgvs_exp==var,c("shep_effect_mean","shep_effect_se")] <- matrix(c(shep_effect_mean, shep_effect_se), nrow=nrow(var_df), ncol=2, byrow=T)
+        # get p value by combining 3 z-tests w/ fisher's method
         z <- (var_df$shep_mean - control_shep_mean) / sqrt(var_df$shep_var + control_shep_var)
         p <- 2*pnorm(-abs(z))
         df[df$hgvs_exp==var,"shep_obs_pval"] <- p

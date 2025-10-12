@@ -1,4 +1,4 @@
-
+library(ashr)
 
 #' Computes posterior predictive variant obs outside CI counts for a given dataset, posterior draws, and model
 posterior_samples <- function(n_sims, data, sim, modelname, K=4) {
@@ -37,20 +37,22 @@ posterior_CI_FACS_phi_pos_grouped <- function(n_sims, n_draws, data, sim, K) {
     return(scores)
 }
 
-# calling significance fxn
 label_significant <- function(df, effect_cols, sd_cols, c_thresh) {
   for (i in 1:length(effect_cols)) {
     method <- effect_cols[i]
     if (method %in% colnames(df)) {
       if (grepl("enrich_score", method, fixed=T)) {
         # adjust enrich p-pvalues
-        df$enrich_pval_adjusted <- p.adjust(df$enrich_pval, method="BH")
+        p_value_df <- unique(df %>% ungroup %>% select(hgvs, enrich_pval))
+        p_value_df$enrich_pval_adjusted <- p.adjust(p_value_df$enrich_pval, method="BH")
+        df <- merge(df, p_value_df, all.x=T)
+        # df$enrich_pval_adjusted <- p.adjust(df$enrich_pval, method="BH") 
         df[paste0(method, "_disc")] <- df$enrich_pval_adjusted <= 1 - c_thresh
         df[paste0(method, "_isnull")] <- df$enrich_pval_adjusted > 1 - c_thresh
         rank_name <- paste0(method, "_rank")
         rank_fit_df <- df %>% group_by(hgvs) %>% filter(row_number() == 1) %>% ungroup() %>% 
           mutate(!! rank_name := dense_rank(enrich_pval_adjusted)) %>% select(hgvs, one_of(rank_name))
-        df <- merge(df, rank_fit_df)
+        df <- merge(df, rank_fit_df, all.x=T)
         # add syn sd cut
         method_sd_cut <- paste0(method, "_syn_sd")
         syn_muts <- df[df$type=="synonymous", method]
@@ -58,12 +60,12 @@ label_significant <- function(df, effect_cols, sd_cols, c_thresh) {
         syn_mean <- dist$estimate[1]
         syn_sd <- dist$estimate[2]
         df[paste0(method_sd_cut, "_disc")] <- 2*pnorm(-abs((df[[method]] - syn_mean)/syn_sd)) < 1 - c_thresh
-        df[paste0(method_sd_cut, "_isnull")] <- !df[paste0(method_sd_cut, "_disc")]
+        df[paste0(method_sd_cut, "_isnull")] <- !df[[paste0(method_sd_cut, "_disc")]]
         rank_name <- paste0(method_sd_cut, "_rank")
         df[paste0(method_sd_cut, "_pval")] <- 2*pnorm(-abs((df[[method]] - syn_mean)/syn_sd))
         rank_fit_df <- df %>% group_by(hgvs) %>% filter(row_number() == 1) %>% ungroup() %>% 
           mutate(!! rank_name := dense_rank(get(paste0(method_sd_cut, "_pval")))) %>% select(hgvs, one_of(rank_name))
-        df <- merge(df, rank_fit_df)
+        df <- merge(df, rank_fit_df, all.x=T)
       } else if (grepl("mu_mean", method, fixed=T)) {
         model <- strsplit(method, "_mu_mean")[[1]]
         lfsr <- df[[paste0(model, "_mu_lfsr")]]
@@ -76,10 +78,13 @@ label_significant <- function(df, effect_cols, sd_cols, c_thresh) {
           lfsr <- min(p, 1-p)
           return(lfsr)
         })
+        # add PEP based
         rank_name <- paste0(method, "_rank")
         rank_fit_df <- df %>% group_by(hgvs) %>% filter(row_number() == 1) %>% ungroup() %>% 
-          mutate(!! rank_name := dense_rank(get(paste0(model, "_mu_lfsr_approx")))) %>% select(hgvs, one_of(rank_name))
-        df <- merge(df, rank_fit_df)
+          mutate(!! rank_name := dense_rank(get(paste0(model, "_mu_lfsr_approx")))) %>% 
+          select(hgvs, one_of(rank_name), paste0(model, "_mu_lfsr_approx")) %>%
+          arrange(get(paste0(model, "_mu_lfsr_approx"))) 
+
       } else if (is.na(sd_cols[i])) {
         # fit normal to synonymous to get syn mean and syn sd
         syn_muts <- df[df$type=="synonymous", method]
@@ -87,16 +92,19 @@ label_significant <- function(df, effect_cols, sd_cols, c_thresh) {
         syn_mean <- dist$estimate[1]
         syn_sd <- dist$estimate[2]
         df[paste0(method_sd_cut, "_disc")] <- 2*pnorm(-abs((mean - syn_mean)/syn_sd)) < 1 - c_thresh
-        df[paste0(method_sd_cut, "_isnull")] <- !df[paste0(method_sd_cut, "_disc")]
+        df[paste0(method_sd_cut, "_isnull")] <- !df[[paste0(method_sd_cut, "_disc")]]
         df[paste0(method_sd_cut, "_pval")] <- 2*pnorm(-abs((df[[method]] - syn_mean)/syn_sd))
         rank_name <- paste0(method_sd_cut, "_rank")
         rank_fit_df <- df %>% group_by(hgvs) %>% filter(row_number() == 1) %>% ungroup() %>% 
           mutate(!! rank_name := dense_rank(get(paste0(method_sd_cut, "_pval")))) %>% select(hgvs, one_of(rank_name))
-        df <- merge(df, rank_fit_df)
+        df <- merge(df, rank_fit_df, all.x=T)
       } else {
-        # lfsr analgoues
+        # not enrich2, not facs model, known sd -> both syn sd based and estimated distribution based
         mean <- df[[effect_cols[i]]]
         sd <- df[[sd_cols[i]]]
+        df <- df %>% add_count(hgvs, name="num_reps")
+        n_replicates <- df$num_reps
+        # lfsr analog
         lfsr <- apply(cbind(pnorm(0, mean, sd), 1-pnorm(0, mean, sd)), 1, min)
         df[paste0(method, "_disc")] <- lfsr <= 1 - c_thresh
         df[paste0(method, "_isnull")] <- lfsr > 1 - c_thresh
@@ -104,22 +112,93 @@ label_significant <- function(df, effect_cols, sd_cols, c_thresh) {
         rank_name <- paste0(method, "_rank")
         rank_fit_df <- df %>% group_by(hgvs) %>% filter(row_number() == 1) %>% ungroup() %>% 
           mutate(!! rank_name := dense_rank(get(paste0(method, "_lfsr")))) %>% select(hgvs, one_of(rank_name))
-        df <- merge(df, rank_fit_df)
-        method_sd_cut <- paste0(method, "_syn_sd")
+        df <- merge(df, rank_fit_df, all.x=T)
 
         # fit normal to synonymous to get syn mean and syn sd
         syn_muts <- df[df$type=="synonymous", method]
         dist <- MASS::fitdistr(syn_muts[!is.na(syn_muts)], "normal")
         syn_mean <- dist$estimate[1]
         syn_sd <- dist$estimate[2]
+        n_syn <- length(syn_muts)
+
+        # t-test using estimated parameters and number of replicates (for syn variants * number of replicates)
+        # mean + sd of variant effect, 
+        method_ttest_cut <- paste0(method, "_ttest")
+        se <- sqrt((sd^2/n_replicates) + (syn_sd^2/n_syn))
+        dof <- ((sd^2/n_replicates + syn_sd^2/n_syn)^2 )/((sd^2/n_replicates)^2/(n_replicates-1) + (syn_sd^2/n_syn)^2/(n_syn-1))
+        t <- (mean-syn_mean)/se
+        df[paste0(method_ttest_cut, "_pval")] <- 2*pt(-abs(t),dof)
+        p_value_df <- unique(df %>% ungroup %>% select(hgvs, paste0(method_ttest_cut, "_pval")))
+        p_value_df[[paste0(method_ttest_cut, "_pval_BH")]] <- p.adjust(p_value_df[[paste0(method_ttest_cut, "_pval")]], method="BH")
+        df <- merge(df, p_value_df, all.x=T)
+        df[paste0(method_ttest_cut, "_disc")] <- df[[paste0(method_ttest_cut, "_pval_BH")]] <= 1 - c_thresh
+        df[paste0(method_ttest_cut, "_isnull")] <- df[[paste0(method_ttest_cut, "_pval_BH")]] > 1 - c_thresh
+
+        # p-value combination approach
+        # LR test btwn ML log normal params vs syn
+        method_lik_cut <- paste0(method, "_lik")
+        if (method == "ML_effect_mean") {
+          lambda <- -2 * (-1*df$ML_syn_lik - -1*df$ML_param_lik) # multiply by -1 bc this is from cdf_log_lik which is actually NLL
+          df[paste0(method_lik_cut, "_pval")] <- pchisq(lambda, 2, lower.tail=FALSE)
+        }
+        # normal test weight effect
+        if (method == "weight_effect_mean") {
+          df[paste0(method_lik_cut, "_pval")]  <- NA
+          for (rep in unique(df$rep)) {
+            rep_syn_muts <- df[df$type=="synonymous" & df$rep == rep, "weight_effects"]
+            rep_dist <- MASS::fitdistr(rep_syn_muts[!is.na(rep_syn_muts)], "normal")
+            rep_syn_mean <- rep_dist$estimate[1]
+            rep_syn_sd <- rep_dist$estimate[2]
+            effects <- df[df$rep == rep, "weight_effects"]
+            df[df$rep == rep, paste0(method_lik_cut, "_pval")] <- 2*pnorm(-abs((effects - rep_syn_mean)/rep_syn_sd))
+          }
+        }
+        # combine p-values by replicate w/ Simes
+        # simes p: min {kp(i)/i}
+        if (method == "ML_effect_mean" || method == "weight_effect_mean") {
+          df[paste0(method_lik_cut, "_simes_pval")] <- NA
+          df[paste0(method_lik_cut, "_fishers_pval")] <- NA
+          for (var in unique(df$hgvs)) {
+            pvals <- df[df$hgvs==var,paste0(method_lik_cut, "_pval")]
+            pvals <- pvals[!is.na(pvals)]
+            df[df$hgvs==var, paste0(method_lik_cut, "_simes_pval")] <- min(length(pvals) * pvals / rank(pvals))
+            df[df$hgvs==var, paste0(method_lik_cut, "_fishers_pval")] <- pchisq(-2*sum(log(pvals)), 2*length(pvals), lower.tail=FALSE)
+          }
+
+          # BH correct simes p-values
+          p_value_df <- unique(df %>% ungroup %>% select(hgvs, paste0(method_lik_cut, "_simes_pval")))
+          p_value_df[[paste0(method_lik_cut, "_simes_pval_BH")]] <- p.adjust(p_value_df[[paste0(method_lik_cut, "_simes_pval")]], method="BH")
+          df <- merge(df, p_value_df, all.x=T)
+          df[paste0(method_lik_cut, "_simes_disc")] <- df[[paste0(method_lik_cut, "_simes_pval_BH")]] <= 1 - c_thresh
+          df[paste0(method_lik_cut, "_simes_isnull")] <- df[[paste0(method_lik_cut, "_simes_pval_BH")]] > 1 - c_thresh
+
+          # BH correct fishers p-values
+          p_value_df <- unique(df %>% ungroup %>% select(hgvs, paste0(method_lik_cut, "_fishers_pval")))
+          p_value_df[[paste0(method_lik_cut, "_fishers_pval_BH")]] <- p.adjust(p_value_df[[paste0(method_lik_cut, "_fishers_pval")]], method="BH")
+          df <- merge(df, p_value_df, all.x=T)
+          df[paste0(method_lik_cut, "_fishers_disc")] <- df[[paste0(method_lik_cut, "_fishers_pval_BH")]] <= 1 - c_thresh
+          df[paste0(method_lik_cut, "_fishers_isnull")] <- df[[paste0(method_lik_cut, "_fishers_pval_BH")]] > 1 - c_thresh
+        }
+
+        # syn sd
+        method_sd_cut <- paste0(method, "_syn_sd")
         # df[paste0(method_sd_cut, "_disc")] <- (mean < syn_mean - 2*syn_sd) | (mean > syn_mean + 2*syn_sd)
         df[paste0(method_sd_cut, "_disc")] <- 2*pnorm(-abs((mean - syn_mean)/syn_sd)) < 1 - c_thresh
-        df[paste0(method_sd_cut, "_isnull")] <- !df[paste0(method_sd_cut, "_disc")]
+        df[paste0(method_sd_cut, "_isnull")] <- !df[[paste0(method_sd_cut, "_disc")]]
         df[paste0(method_sd_cut, "_pval")] <- 2*pnorm(-abs((mean - syn_mean)/syn_sd))
-        rank_name <- paste0(method_sd_cut, "_rank")
+        # add MT-corrected discovery and p-value:
+        p_value_df <- unique(df %>% ungroup %>% select(hgvs, paste0(method_sd_cut, "_pval")))
+        p_value_df[[paste0(method_sd_cut, "_pval_BH")]] <- p.adjust(p_value_df[[paste0(method_sd_cut, "_pval")]], method="BH")
+        df <- merge(df, p_value_df, all.x=T)
+        method_sd_cut_BH <- paste0(method, "_syn_sd_BH")
+        # df[paste0(method_sd_cut, "_pval_BH")] <- p.adjust(df[paste0(method_sd_cut, "_pval")], method="BH")
+        df[paste0(method_sd_cut_BH, "_disc")] <- df[[paste0(method_sd_cut, "_pval_BH")]] <= 1 - c_thresh
+        df[paste0(method_sd_cut_BH, "_isnull")] <- df[[paste0(method_sd_cut, "_pval_BH")]] > 1 - c_thresh
+
+        rank_name <- paste0(method_sd_cut_BH, "_rank")
         rank_fit_df <- df %>% group_by(hgvs) %>% filter(row_number() == 1) %>% ungroup() %>% 
-          mutate(!! rank_name := dense_rank(get(paste0(method_sd_cut, "_pval")))) %>% select(hgvs, one_of(rank_name))
-        df <- merge(df, rank_fit_df)
+          mutate(!! rank_name := dense_rank(get(paste0(method_sd_cut, "_pval_BH")))) %>% select(hgvs, one_of(rank_name))
+        df <- merge(df, rank_fit_df, all.x=T)
       }
     }
   }
@@ -271,6 +350,8 @@ get_sim_model_stats <- function(yaml, res_dir) {
   return(sim_model_stats)
 }
 
+
+
 get_cor_df <- function(yaml, res_dir, effect_quantile=0) {
   cor_df <- c()
   for (dataset in yaml$datasets) {
@@ -291,21 +372,32 @@ get_cor_df <- function(yaml, res_dir, effect_quantile=0) {
                   # get fit df
                   effect_cols <- c(paste0(model, "_mu_mean"), paste0(model, "_syn_recalibrated_mu_mean"), "enrich_score", "weight_effect_mean", "shep_effect_mean", "ML_effect_mean")
                   sd_cols <- c(NA, NA, "enrich_SE", "weight_effect_se", "shep_effect_se", "ML_effect_se")
+                  # get fit df
+                  effect_cols <- c(paste0(model, "_mu_mean"), paste0(model, "_syn_recalibrated_mu_mean"), "enrich_score", "weight_effect_mean", "shep_effect_mean", "ML_effect_mean")
+                  sd_cols <- c(NA, NA, "enrich_SE", "weight_effect_se", "shep_effect_se", "ML_effect_se")
+                  if (model == "FACS_double_sample_repq") {
+                    effect_cols <- c(effect_cols, "lilace_VI_normal_unrecal_mu_mean", "lilace_VI_normal_mu_mean", 
+                                    "lilace_VI_multivariate_normal_unrecal_mu_mean", "lilace_VI_multivariate_normal_mu_mean")
+                    sd_cols <- c(sd_cols, rep(NA, 4))
+                  }
+                  else if (model == "FACS_double_sample_repq_nopos") {
+                    effect_cols <- c(effect_cols, "lilace_nopos_VI_normal_unrecal_mu_mean", "lilace_nopos_VI_normal_mu_mean", 
+                                    "lilace_nopos_VI_multivariate_normal_unrecal_mu_mean", "lilace_nopos_VI_multivariate_normal_mu_mean")
+                    sd_cols <- c(sd_cols, rep(NA, 4))
+                  }
                   fit_df <- readRDS(paste0(sim_res_dir, "/baseline_", sim_name, "/fitted_df.RData"))
-                  # fit_df_called <- label_significant(fit_df, 
-                  #                                   effect_cols,
-                  #                                   sd_cols, 
-                  #                                   c_thresh)
-                  # make pos - variant - effect - beta - lfsr - disc mat
                   effect_df <- cbind(expand.grid(position = 1:ncol(sim_obj$effect_mat), mutation = 1:nrow(sim_obj$effect_mat)), effect=unlist(c(t(sim_obj$effect_mat))))
                   effect_df_merged <- merge(fit_df, effect_df)
                   # filter to one obs per variant to get FDR on variant scale
                   effect_df_merged <- effect_df_merged %>% group_by(hgvs) %>% filter(row_number() == 1)
                   for (method in effect_cols) {
-                    is_rescaled <- rescal == "_rescaled"
-                    corr <- cor(effect_df_merged$effect, effect_df_merged[[method]], use="complete.obs")
-                    model_corr <- data.frame(dataset, n_pos, param, param_val, iter, method, is_rescaled, corr)
-                    cor_df <- rbind(cor_df, model_corr)
+                    if (method %in% colnames(effect_df_merged)) {
+                      is_rescaled <- rescal == "_rescaled"
+                      corr <- cor(effect_df_merged$effect, effect_df_merged[[method]], use="complete.obs")
+                      rank_corr <- cor(effect_df_merged$effect, effect_df_merged[[method]], method="spearman", use="complete.obs")
+                      model_corr <- data.frame(dataset, n_pos, param, param_val, iter, method, is_rescaled, corr, rank_corr)
+                      cor_df <- rbind(cor_df, model_corr)
+                    }
                   }
                 }
               })
@@ -316,6 +408,52 @@ get_cor_df <- function(yaml, res_dir, effect_quantile=0) {
     }
   }
   return(cor_df)
+}
+
+make_sim_scatter <- function(yaml, res_dir, plot_dir, param, param_val, iter=0) {
+  for (dataset in yaml$datasets) {
+    for (n_pos in yaml$n_pos_vals) {
+      for (rescal in c("_rescaled")) {
+        try({
+          sim_name <- paste0("sim_", dataset, "_", n_pos, "pos", "_", param, "_", param_val, "_", iter, rescal)
+          sim_res_dir <- paste0(res_dir, "/sim_results/", sim_name)
+          # get fit model stats
+          for (model in yaml$models) {
+            sim_obj_name <- paste0("sim_obj_", dataset, "_", n_pos, "pos", "_", param, "_", param_val, "_", iter)
+            sim_obj <- readRDS(paste0(res_dir, "/param_data/", sim_obj_name, ".RData"))
+            effect_cutoff <- quantile(abs(sim_obj$effect_mat[sim_obj$effect_mat != 0]), probs=effect_quantile)
+            # get fit df
+            effect_cols <- c(paste0(model, "_mu_mean"), paste0(model, "_syn_recalibrated_mu_mean"), "enrich_score", "weight_effect_mean", "shep_effect_mean", "ML_effect_mean")
+            sd_cols <- c(NA, NA, "enrich_SE", "weight_effect_se", "shep_effect_se", "ML_effect_se")
+            # get fit df
+            effect_cols <- c(paste0(model, "_mu_mean"), paste0(model, "_syn_recalibrated_mu_mean"), "enrich_score", "weight_effect_mean", "shep_effect_mean", "ML_effect_mean")
+            sd_cols <- c(NA, NA, "enrich_SE", "weight_effect_se", "shep_effect_se", "ML_effect_se")
+            if (model == "FACS_double_sample_repq") {
+              effect_cols <- c(effect_cols, "lilace_VI_normal_unrecal_mu_mean", "lilace_VI_normal_mu_mean", 
+                              "lilace_VI_multivariate_normal_unrecal_mu_mean", "lilace_VI_multivariate_normal_mu_mean")
+              sd_cols <- c(sd_cols, rep(NA, 4))
+            }
+            else if (model == "FACS_double_sample_repq_nopos") {
+              effect_cols <- c(effect_cols, "lilace_nopos_VI_normal_unrecal_mu_mean", "lilace_nopos_VI_normal_mu_mean", 
+                              "lilace_nopos_VI_multivariate_normal_unrecal_mu_mean", "lilace_nopos_VI_multivariate_normal_mu_mean")
+              sd_cols <- c(sd_cols, rep(NA, 4))
+            }
+            fit_df <- readRDS(paste0(sim_res_dir, "/baseline_", sim_name, "/fitted_df.RData"))
+            effect_df <- cbind(expand.grid(position = 1:ncol(sim_obj$effect_mat), mutation = 1:nrow(sim_obj$effect_mat)), effect=unlist(c(t(sim_obj$effect_mat))))
+            effect_df_merged <- merge(fit_df, effect_df)
+            # filter to one obs per variant to get FDR on variant scale
+            effect_df_merged <- effect_df_merged %>% group_by(hgvs) %>% filter(row_number() == 1)
+            for (method in effect_cols) {
+              if (method %in% colnames(effect_df_merged)) {
+                p <- ggplot(effect_df_merged, aes(x=effect, y=method)) + geom_point() + theme_cowplot()
+                ggsave(p, paste0(plot_dir, "/sim_scatters/", dataset, "_", param, "_", param_val, "_", iter, ".png"))
+              }
+            }
+          }
+        })
+      }
+    }
+  }
 }
 
 
@@ -337,7 +475,6 @@ get_FDR_df <- function(yaml, res_dir, c_thresh=0.95, effect_quantile=0) {
               # get fit model stats
               for (model in yaml$models) {
                 stats_file <- paste0(sim_res_dir, "/baseline_", sim_name, "/", model, "_plots/model_stats.yaml")
-                print(stats_file)
                 model_stats <- data.frame(yaml::read_yaml(stats_file))
                 stat_cols <- colnames(model_stats)
                 model_stats <- cbind(dataset, n_pos, param, param_val, iter, model_stats)
@@ -350,40 +487,46 @@ get_FDR_df <- function(yaml, res_dir, c_thresh=0.95, effect_quantile=0) {
                 # get fit df
                 effect_cols <- c(paste0(model, "_mu_mean"), paste0(model, "_syn_recalibrated_mu_mean"), "enrich_score", "weight_effect_mean", "shep_effect_mean", "ML_effect_mean")
                 sd_cols <- c(NA, NA, "enrich_SE", "weight_effect_se", "shep_effect_se", "ML_effect_se")
+                if (model == "FACS_double_sample_repq") {
+                  effect_cols <- c(effect_cols, "lilace_VI_normal_unrecal_mu_mean", "lilace_VI_normal_mu_mean", 
+                                  "lilace_VI_multivariate_normal_unrecal_mu_mean", "lilace_VI_multivariate_normal_mu_mean")
+                  sd_cols <- c(sd_cols, rep(NA, 4))
+                }
+                else if (model == "FACS_double_sample_repq_nopos") {
+                  effect_cols <- c(effect_cols, "lilace_nopos_VI_normal_unrecal_mu_mean", "lilace_nopos_VI_normal_mu_mean", 
+                                  "lilace_nopos_VI_multivariate_normal_unrecal_mu_mean", "lilace_nopos_VI_multivariate_normal_mu_mean")
+                  sd_cols <- c(sd_cols, rep(NA, 4))
+                }
                 fit_df <- readRDS(paste0(sim_res_dir, "/baseline_", sim_name, "/fitted_df.RData"))
+                # print(colnames(fit_df))
                 fit_df_called <- label_significant(fit_df, 
                                                   effect_cols,
                                                   sd_cols, 
                                                   c_thresh)
+                # print(colnames(fit_df_called))
                 # make pos - variant - effect - beta - lfsr - disc mat
                 effect_df <- cbind(expand.grid(position = 1:ncol(sim_obj$effect_mat), mutation = 1:nrow(sim_obj$effect_mat)), effect=unlist(c(t(sim_obj$effect_mat))))
                 effect_df_merged <- merge(fit_df_called, effect_df)
                 # filter to one obs per variant to get FDR on variant scale
                 effect_df_merged <- effect_df_merged %>% group_by(hgvs) %>% filter(row_number() == 1)
-
+                if ("lilace_VI_normal_unrecal_mu_mean" %in% effect_df_merged) {
+                  print("VI in effect df")
+                }
                 # FDR df -- dataset n pos param iter model FDR FNR div 
                 # method <- paste0(model, "_syn_recalibrated_mu_mean")
-                for (method in effect_cols) {
-                  # FDR--# of zero effect discoveries / # discoveries
-                  disco_df <- effect_df_merged[!is.na(effect_df_merged[[paste0(method, "_disc")]]) & effect_df_merged[[paste0(method, "_disc")]],]
-                  FDR <- sum(disco_df$effect==0) / nrow(disco_df)
-                  if (nrow(disco_df) == 0) {
-                    FDR <- 0
-                  }
-                  # FNR--# of nonzero effect nondiscoveries / # of nonzero effect
-                  nonzero_effect_df <- effect_df_merged[abs(effect_df_merged$effect) > effect_cutoff,]
-                  FNR <- sum(!is.na(nonzero_effect_df[[paste0(method, "_isnull")]]) & nonzero_effect_df[[paste0(method, "_isnull")]]) / nrow(nonzero_effect_df)
-                  # FPR--# of zero effect discoveries / # of zero effects
-                  FPR <- sum(disco_df$effect==0) / sum(effect_df_merged$effect==0)
-                  # compute sim metrics
-                  is_rescaled <- rescal == "_rescaled"
-                  model_FDR <- data.frame(dataset, n_pos, param, param_val, iter, method, is_rescaled, FDR, FNR, FPR)
-                  FDR_df <- rbind(FDR_df, model_FDR)
+                method_cols <- effect_cols
+                method_cols <- c(method_cols, c("lilace_VI_normal_unrecal", "lilace_VI_normal", "lilace_VI_multivariate_normal_unrecal", "lilace_VI_multivariate_normal"),
+                                              c("lilace_nopos_VI_normal_unrecal", "lilace_nopos_VI_normal", "lilace_nopos_VI_multivariate_normal_unrecal", "lilace_nopos_VI_multivariate_normal"))
+                # add other ML and weight bin methods: syn_sd_cut
+                for (base_method in c("weight_effect_mean", "ML_effect_mean")) {
+                  other_methods <- paste0(base_method, c("_syn_sd", "_syn_sd_BH", "_ttest", "_lik_simes", "_lik_fishers"))
+                  method_cols <- c(method_cols, other_methods)
+                }
+                method_cols <- c(method_cols, "enrich_score_syn_sd")
 
-                  # add sd effects
-                  if (paste0(method, "_syn_sd_disc") %in% colnames(effect_df_merged)) {
-                    method <- paste0(method, "_syn_sd")
-                     # FDR--# of zero effect discoveries / # discoveries
+                for (method in method_cols) {
+                  if (paste0(method, "_disc") %in% colnames(effect_df_merged)) {
+                    # FDR--# of zero effect discoveries / # discoveries
                     disco_df <- effect_df_merged[!is.na(effect_df_merged[[paste0(method, "_disc")]]) & effect_df_merged[[paste0(method, "_disc")]],]
                     FDR <- sum(disco_df$effect==0) / nrow(disco_df)
                     if (nrow(disco_df) == 0) {
@@ -397,6 +540,7 @@ get_FDR_df <- function(yaml, res_dir, c_thresh=0.95, effect_quantile=0) {
                     # compute sim metrics
                     is_rescaled <- rescal == "_rescaled"
                     model_FDR <- data.frame(dataset, n_pos, param, param_val, iter, method, is_rescaled, FDR, FNR, FPR)
+                    # print(model_FDR)
                     FDR_df <- rbind(FDR_df, model_FDR)
                   }
                 }
@@ -511,87 +655,147 @@ get_rank_FDR_df <- function(yaml, res_dir, rank_param, rank_param_val, c_thresh=
 }
 
 
+get_prc_df <- function(yaml, res_dir, param, param_val, effect_cutoff=0) {
+  prc_df <- c()
+  for (dataset in yaml$datasets) {
+    for (n_pos in yaml$n_pos_vals) {
+      for (iter in 0:(yaml$n_iter-1)) {
+        for (rescal in c("_rescaled")) {
+          try({
+            sim_name <- paste0("sim_", dataset, "_", n_pos, "pos", "_", param, "_", param_val, "_", iter, rescal)
+            sim_res_dir <- paste0(res_dir, "/sim_results/", sim_name)
+            for (model in "FACS_double_sample_repq") {
+              # get sim obj
+              sim_obj_name <- paste0("sim_obj_", dataset, "_", n_pos, "pos", "_", param, "_", param_val, "_", iter)
+              sim_obj <- readRDS(paste0(res_dir, "/param_data/", sim_obj_name, ".RData"))
+              # get fit df
+              effect_cols <- c(paste0(model, "_mu_mean"), paste0(model, "_syn_recalibrated_mu_mean"), "enrich_score", "weight_effect_mean", "shep_effect_mean", "ML_effect_mean")
+              sd_cols <- c(NA, NA, "enrich_SE", "weight_effect_se", "shep_effect_se", "ML_effect_se")
+              fit_df <- readRDS(paste0(sim_res_dir, "/baseline_", sim_name, "/fitted_df.RData"))
+              fit_df_called <- label_significant(fit_df,
+                                                  effect_cols,
+                                                  sd_cols,
+                                                  0.95)
+              # make pos - variant - effect - beta - lfsr - disc mat
+              effect_df <- cbind(expand.grid(position = 1:ncol(sim_obj$effect_mat), mutation = 1:nrow(sim_obj$effect_mat)), effect=unlist(c(t(sim_obj$effect_mat))))
+              effect_df_merged <- merge(fit_df_called, effect_df)
+              # filter to one obs per variant to get FDR on variant scale
+              effect_df_merged <- effect_df_merged %>% group_by(hgvs) %>% filter(row_number() == 1)
+              method_cols <- c("FACS_double_sample_repq_syn_recalibrated_mu_mean", "lilace_VI_multivariate_normal_mu_mean", "weight_effect_mean_syn_sd_BH", "weight_effect_mean_syn_sd",
+                              "enrich_score", "enrich_score_syn_sd", "ML_effect_mean_syn_sd_BH")
+              prob_cols <- c("FACS_double_sample_repq_syn_recalibrated_mu_lfsr", "lilace_VI_multivariate_normal_mu_lfsr", "weight_effect_mean_syn_sd_pval_BH", "weight_effect_mean_syn_sd_pval", 
+                            "enrich_pval_adjusted", "enrich_score_syn_sd_pval", "ML_effect_mean_syn_sd_pval_BH")
+              for (i in 1:length(method_cols)) {
+                method <- method_cols[i]
+                print(paste0("Estimating pr for ", method, "..."))
+                p_value_col <- prob_cols[i]
+                is_true_effect <- effect_df_merged$effect != 0
+                p_values <- effect_df_merged[[p_value_col]]
+                thresholds <- sort(unique(p_values))
+                for (j in 1:length(thresholds)) {
+                  thresh <- thresholds[j]
+                  rank <- j
+                  is_called_effect <- ifelse(is.na(p_values), FALSE, p_values <= thresh)
+                  tp <- sum(is_called_effect & is_true_effect)
+                  fp <- sum(is_called_effect & !is_true_effect)
+                  fn <- sum(!is_called_effect & is_true_effect)
+                  precision <- if (tp + fp > 0) tp / (tp + fp) else 1
+                  recall <- tp / (tp + fn)
+                  prc_df <- rbind(prc_df, c(dataset, n_pos, iter, method, rank, recall, precision))
+                }
+              }
+            }
+          })
+        }
+      }
+    }
+  }
+  return(prc_df)
+}
+
 # get sig cutoff df from yaml + param setting
-get_sig_FDR_df <- function(yaml, res_dir, sig_param, sig_param_val, effect_cutoff=0) {
+get_sig_FDR_df <- function(yaml, res_dir, param, param_val, effect_cutoff=0) {
   FDR_FNR_df <- c()
   for (dataset in yaml$datasets) {
     for (n_pos in yaml$n_pos_vals) {
-      for (i in 1:length(yaml$params)) {
-        param <- yaml$params[i]
-        for (param_val in yaml$param_vals[[i]]) {
-          if (param == sig_param & param_val == sig_param_val) {
-            for (iter in 0:(yaml$n_iter-1)) {
-              for (rescal in c("", "_rescaled")) {
-                try({
-                  sim_name <- paste0("sim_", dataset, "_", n_pos, "pos", "_", param, "_", param_val, "_", iter, rescal)
-                  sim_res_dir <- paste0(res_dir, "/sim_results/", sim_name)
-                  # get fit model stats
-                  for (model in yaml$models) {
-                    stats_file <- paste0(sim_res_dir, "/baseline_", sim_name, "/", model, "_plots/model_stats.yaml")
-                    print(stats_file)
-                    model_stats <- data.frame(yaml::read_yaml(stats_file))
-                    stat_cols <- colnames(model_stats)
-                    model_stats <- cbind(dataset, n_pos, param, param_val, iter, model_stats)
-                    model_stats$rescaled <- rescal == "_rescaled"
+      for (iter in 0:(yaml$n_iter-1)) {
+        for (rescal in c("", "_rescaled")) {
+          try({
+            sim_name <- paste0("sim_", dataset, "_", n_pos, "pos", "_", param, "_", param_val, "_", iter, rescal)
+            sim_res_dir <- paste0(res_dir, "/sim_results/", sim_name)
+            # get fit model stats
+            for (model in yaml$models) {
+              stats_file <- paste0(sim_res_dir, "/baseline_", sim_name, "/", model, "_plots/model_stats.yaml")
+              print(stats_file)
+              model_stats <- data.frame(yaml::read_yaml(stats_file))
+              stat_cols <- colnames(model_stats)
+              model_stats <- cbind(dataset, n_pos, param, param_val, iter, model_stats)
+              model_stats$rescaled <- rescal == "_rescaled"
 
-                    # get sim obj
-                    sim_obj_name <- paste0("sim_obj_", dataset, "_", n_pos, "pos", "_", param, "_", param_val, "_", iter)
-                    sim_obj <- readRDS(paste0(res_dir, "/param_data/", sim_obj_name, ".RData"))
-                    # get fit df
-                    effect_cols <- c(paste0(model, "_mu_mean"), paste0(model, "_syn_recalibrated_mu_mean"), "enrich_score", "weight_effect_mean", "shep_effect_mean", "ML_effect_mean")
-                    sd_cols <- c(NA, NA, "enrich_SE", "weight_effect_se", "shep_effect_se", "ML_effect_se")
-                    fit_df <- readRDS(paste0(sim_res_dir, "/baseline_", sim_name, "/fitted_df.RData"))
-                    for (sig_cutoff in seq(0.999, 0.5, length=100)) {
-                        fit_df_called <- label_significant(fit_df, 
-                                                      effect_cols,
-                                                      sd_cols, 
-                                                      sig_cutoff)
-                      # make pos - variant - effect - beta - lfsr - disc mat
-                      effect_df <- cbind(expand.grid(position = 1:ncol(sim_obj$effect_mat), mutation = 1:nrow(sim_obj$effect_mat)), effect=unlist(c(t(sim_obj$effect_mat))))
-                      effect_df_merged <- merge(fit_df_called, effect_df)
-                      # filter to one obs per variant to get FDR on variant scale
-                      effect_df_merged <- effect_df_merged %>% group_by(hgvs) %>% filter(row_number() == 1)
+              # get sim obj
+              sim_obj_name <- paste0("sim_obj_", dataset, "_", n_pos, "pos", "_", param, "_", param_val, "_", iter)
+              sim_obj <- readRDS(paste0(res_dir, "/param_data/", sim_obj_name, ".RData"))
+              # get fit df
+              effect_cols <- c(paste0(model, "_mu_mean"), paste0(model, "_syn_recalibrated_mu_mean"), "enrich_score", "weight_effect_mean", "shep_effect_mean", "ML_effect_mean")
+              sd_cols <- c(NA, NA, "enrich_SE", "weight_effect_se", "shep_effect_se", "ML_effect_se")
+              fit_df <- readRDS(paste0(sim_res_dir, "/baseline_", sim_name, "/fitted_df.RData"))
+              for (sig_cutoff in seq(0.999, 0.5, length=100)) {
+                  fit_df_called <- label_significant(fit_df, 
+                                                effect_cols,
+                                                sd_cols, 
+                                                sig_cutoff)
+                # make pos - variant - effect - beta - lfsr - disc mat
+                effect_df <- cbind(expand.grid(position = 1:ncol(sim_obj$effect_mat), mutation = 1:nrow(sim_obj$effect_mat)), effect=unlist(c(t(sim_obj$effect_mat))))
+                effect_df_merged <- merge(fit_df_called, effect_df)
+                # filter to one obs per variant to get FDR on variant scale
+                effect_df_merged <- effect_df_merged %>% group_by(hgvs) %>% filter(row_number() == 1)
 
-                      for (method in effect_cols) {
-                        rank_df <- effect_df_merged
-                        
-                        disco_df <- rank_df[!is.na(rank_df[[paste0(method, "_disc")]]) & rank_df[[paste0(method, "_disc")]],]
-                        FDR <- sum(disco_df$effect==0) / nrow(disco_df)
-                        # FNR--# of nonzero effect nondiscoveries / # of nonzero effect
-                        nonzero_effect_df <- rank_df[abs(rank_df$effect) > effect_cutoff,]
-                        FNR <- sum(!is.na(nonzero_effect_df[[paste0(method, "_isnull")]]) & nonzero_effect_df[[paste0(method, "_isnull")]]) / nrow(nonzero_effect_df)
-                        # FPR--# of zero effect discoveries / # of zero effects
-                        FPR <- sum(disco_df$effect==0) / sum(rank_df$effect==0)
-                        # sens
-                        sens <- sum(abs(disco_df$effect) > effect_cutoff) / sum(abs(rank_df$effect) > effect_cutoff)
-                        # compute sim metrics
-                        is_rescaled <- rescal == "_rescaled"
-                        model_FDR <- data.frame(dataset, n_pos, param, param_val, iter, method, is_rescaled, FDR, FNR, FPR, sens, sig_cutoff)
-                        FDR_FNR_df <- rbind(FDR_FNR_df, model_FDR)
-                        # add sd effects
-                        if (paste0(method, "_syn_sd_disc") %in% colnames(effect_df_merged)) {
-                          method <- paste0(method, "_syn_sd")
-                          disco_df <- rank_df[!is.na(rank_df[[paste0(method, "_disc")]]) & rank_df[[paste0(method, "_disc")]],]
-                          FDR <- sum(disco_df$effect==0) / nrow(disco_df)
-                          # FNR--# of nonzero effect nondiscoveries / # of nonzero effect
-                          nonzero_effect_df <- rank_df[abs(rank_df$effect) > effect_cutoff,]
-                          FNR <- sum(!is.na(nonzero_effect_df[[paste0(method, "_isnull")]]) & nonzero_effect_df[[paste0(method, "_isnull")]]) / nrow(nonzero_effect_df)
-                          # FPR--# of zero effect discoveries / # of zero effects
-                          FPR <- sum(disco_df$effect==0) / sum(rank_df$effect==0)
-                          # sens
-                          sens <- sum(abs(disco_df$effect) > effect_cutoff) / sum(abs(rank_df$effect) > effect_cutoff)
-                          # compute sim metrics
-                          is_rescaled <- rescal == "_rescaled"
-                          model_FDR <- data.frame(dataset, n_pos, param, param_val, iter, method, is_rescaled, FDR, FNR, FPR, sens, sig_cutoff)
-                          FDR_FNR_df <- rbind(FDR_FNR_df, model_FDR)
-                        }
-                      }
-                    }
+                method_cols <- effect_cols
+                # add other ML and weight bin methods: syn_sd_cut
+                for (base_method in c("weight_effect_mean", "ML_effect_mean")) {
+                  other_methods <- paste0(base_method, c("_syn_sd", "_syn_sd_BH", "_ttest", "_lik_simes", "_lik_fishers"))
+                  method_cols <- c(method_cols, other_methods)
+                }
+                method_cols <- c(method_cols, "enrich_score_syn_sd")
+                for (method in method_cols) {
+                  if (paste0(method, "_disc") %in% colnames(effect_df_merged)) {
+                    rank_df <- effect_df_merged
+                    
+                    disco_df <- rank_df[!is.na(rank_df[[paste0(method, "_disc")]]) & rank_df[[paste0(method, "_disc")]],]
+                    FDR <- sum(disco_df$effect==0) / nrow(disco_df)
+                    # FNR--# of nonzero effect nondiscoveries / # of nonzero effect
+                    nonzero_effect_df <- rank_df[abs(rank_df$effect) > effect_cutoff,]
+                    FNR <- sum(!is.na(nonzero_effect_df[[paste0(method, "_isnull")]]) & nonzero_effect_df[[paste0(method, "_isnull")]]) / nrow(nonzero_effect_df)
+                    # FPR--# of zero effect discoveries / # of zero effects
+                    FPR <- sum(disco_df$effect==0) / sum(rank_df$effect==0)
+                    # sens
+                    sens <- sum(abs(disco_df$effect) > effect_cutoff) / sum(abs(rank_df$effect) > effect_cutoff)
+                    # compute sim metrics
+                    is_rescaled <- rescal == "_rescaled"
+                    model_FDR <- data.frame(dataset, n_pos, param, param_val, iter, method, is_rescaled, FDR, FNR, FPR, sens, sig_cutoff)
+                    FDR_FNR_df <- rbind(FDR_FNR_df, model_FDR)
+                    # add sd effects
+                    # if (paste0(method, "_syn_sd_disc") %in% colnames(effect_df_merged)) {
+                    #   method <- paste0(method, "_syn_sd")
+                    #   disco_df <- rank_df[!is.na(rank_df[[paste0(method, "_disc")]]) & rank_df[[paste0(method, "_disc")]],]
+                    #   FDR <- sum(disco_df$effect==0) / nrow(disco_df)
+                    #   # FNR--# of nonzero effect nondiscoveries / # of nonzero effect
+                    #   nonzero_effect_df <- rank_df[abs(rank_df$effect) > effect_cutoff,]
+                    #   FNR <- sum(!is.na(nonzero_effect_df[[paste0(method, "_isnull")]]) & nonzero_effect_df[[paste0(method, "_isnull")]]) / nrow(nonzero_effect_df)
+                    #   # FPR--# of zero effect discoveries / # of zero effects
+                    #   FPR <- sum(disco_df$effect==0) / sum(rank_df$effect==0)
+                    #   # sens
+                    #   sens <- sum(abs(disco_df$effect) > effect_cutoff) / sum(abs(rank_df$effect) > effect_cutoff)
+                    #   # compute sim metrics
+                    #   is_rescaled <- rescal == "_rescaled"
+                    #   model_FDR <- data.frame(dataset, n_pos, param, param_val, iter, method, is_rescaled, FDR, FNR, FPR, sens, sig_cutoff)
+                    #   FDR_FNR_df <- rbind(FDR_FNR_df, model_FDR)
+                    # }
                   }
-                })
+                }
               }
             }
-          }
+          })
         }
       }
     }
@@ -688,7 +892,7 @@ get_n_discovery_FDR_df <- function(yaml, res_dir, disc_param, disc_param_val, n_
   return(n_disc_FDR_FNR_df)
 }
 
-get_masked_FDR_df <- function(fit_df, model="FACS_double_sample") {
+get_masked_FDR_df <- function(fit_df, model="FACS_double_sample_repq") {
   FDR_FNR_df <- c()
   # get sim obj
   # get fit df
@@ -701,6 +905,12 @@ get_masked_FDR_df <- function(fit_df, model="FACS_double_sample") {
                                   sig_cutoff)
     # filter to one obs per variant to get FDR on variant scale
     fit_df_called <- fit_df_called %>% group_by(hgvs) %>% filter(row_number() == 1)
+    method_cols <- effect_cols
+    for (base_method in c("weight_effect_mean", "ML_effect_mean")) {
+      other_methods <- paste0(base_method, c("_syn_sd", "_syn_sd_BH", "_ttest", "_lik_simes", "_lik_fishers"))
+      method_cols <- c(method_cols, other_methods)
+    }
+    method_cols <- c(method_cols, "enrich_score_syn_sd")
     for (method in effect_cols) {
       rank_df <- fit_df_called
       
@@ -724,7 +934,7 @@ get_masked_FDR_df <- function(fit_df, model="FACS_double_sample") {
   return(FDR_FNR_df)
 }
 
-get_ranked_masked_FDR_df <- function(fit_df, model="FACS_double_sample") {
+get_ranked_masked_FDR_df <- function(fit_df, model="FACS_double_sample_repq") {
   FDR_FNR_df <- c()
   # get sim obj
   # get fit df
@@ -757,7 +967,7 @@ get_ranked_masked_FDR_df <- function(fit_df, model="FACS_double_sample") {
   return(FDR_FNR_df)
 }
 
-get_am_FNR_df <- function(fit_df, model="FACS_double_sample", threshold="label") {
+get_am_FNR_df <- function(fit_df, model="FACS_double_sample_repq", threshold="label") {
   FDR_FNR_df <- c()
   # get sim obj
   # get fit df
@@ -804,10 +1014,12 @@ get_am_FNR_df <- function(fit_df, model="FACS_double_sample", threshold="label")
   return(FDR_FNR_df)
 }
 
-make_am_box_df <- function(fit_df, am_df) {
+make_am_box_df <- function(fit_df, am_df, model="FACS_double_sample_repq") {
   FDR_FNR_df <- c()
   effect_cols <- c(paste0(model, "_mu_mean"), paste0(model, "_syn_recalibrated_mu_mean"), "enrich_score", "weight_effect_mean", "shep_effect_mean", "ML_effect_mean")
   sd_cols <- c(NA, NA, "enrich_SE", "weight_effect_se", "shep_effect_se", "ML_effect_se")
+  effect_cols <- c(effect_cols, "lilace_VI_normal_mu_mean", "lilace_VI_multivariate_normal_mu_mean")
+  sd_cols <- c(sd_cols, rep(NA, 2))
   am_df <- am_df[am_df$am_class == "likely_benign" | am_df$am_class == "likely_pathogenic",]
   sig_cutoff <- 0.95
 
@@ -828,13 +1040,21 @@ make_am_box_df <- function(fit_df, am_df) {
   } else {
     fit_df_called_am <- merge(fit_df_called, am_df)
   }
-  methods <- effect_cols
-  for (method in effect_cols) {
-    if (paste0(method, "_syn_sd_disc") %in% colnames(fit_df_called_am)) {
-        methods <- c(methods, paste0(method, "_syn_sd"))
-    }
+  # methods <- effect_cols
+  # for (method in effect_cols) {
+  #   if (paste0(method, "_syn_sd_disc") %in% colnames(fit_df_called_am)) {
+  #       methods <- c(methods, paste0(method, "_syn_sd"))
+  #   }
+  # }
+  method_cols <- effect_cols
+  # add other ML and weight bin methods: syn_sd_cut
+  for (base_method in c("weight_effect_mean", "ML_effect_mean")) {
+    other_methods <- paste0(base_method, c("_syn_sd", "_syn_sd_BH", "_ttest", "_lik_simes", "_lik_fishers"))
+    method_cols <- c(method_cols, other_methods)
   }
-  for (method in methods) {
+  method_cols <- c(method_cols, "enrich_score_syn_sd")
+  for (method in method_cols) {
+    print(method)
     disco_df <- fit_df_called_am[!is.na(fit_df_called_am[[paste0(method, "_disc")]]) & fit_df_called_am[[paste0(method, "_disc")]],]
     nonzero_effect_df <- fit_df_called_am[fit_df_called_am$am_class=="likely_pathogenic",]
 
@@ -847,10 +1067,12 @@ make_am_box_df <- function(fit_df, am_df) {
   return(FDR_FNR_df)
 }
 
-make_clinvar_box_df <- function(fit_df, clinvar_df) {
+make_clinvar_box_df <- function(fit_df, clinvar_df, model="FACS_double_sample_repq") {
   FDR_FNR_df <- c()
   effect_cols <- c(paste0(model, "_mu_mean"), paste0(model, "_syn_recalibrated_mu_mean"), "enrich_score", "weight_effect_mean", "shep_effect_mean", "ML_effect_mean")
   sd_cols <- c(NA, NA, "enrich_SE", "weight_effect_se", "shep_effect_se", "ML_effect_se")
+  effect_cols <- c(effect_cols, "lilace_VI_normal_mu_mean", "lilace_VI_multivariate_normal_mu_mean")
+  sd_cols <- c(sd_cols, rep(NA, 2))
   sig_cutoff <- 0.95
 
   fit_df_called <- label_significant(fit_df, 
@@ -870,15 +1092,22 @@ make_clinvar_box_df <- function(fit_df, clinvar_df) {
   } else {
     fit_df_called_clinvar <- merge(fit_df_called, clinvar_df)
   }
-  methods <- effect_cols
-  for (method in effect_cols) {
-    if (paste0(method, "_syn_sd_disc") %in% colnames(fit_df_called_clinvar)) {
-        methods <- c(methods, paste0(method, "_syn_sd"))
-    }
-  }
-  for (method in methods) {
+  # method_cols <- effect_cols
+  # # add other ML and weight bin methods: syn_sd_cut
+  # for (base_method in c("weight_effect_mean", "ML_effect_mean")) {
+  #   other_methods <- paste0(base_method, c("_syn_sd", "_syn_sd_BH", "_ttest", "_lik_simes", "_lik_fishers"))
+  #   method_cols <- c(method_cols, other_methods)
+  # }
+  # method_cols <- c(method_cols, "enrich_score_syn_sd")
+  method_cols <- c("FACS_double_sample_repq_syn_recalibrated_mu_mean", "weight_effect_mean_syn_sd", "weight_effect_mean_syn_sd_BH",
+                              "enrich_score", "enrich_score_syn_sd", "ML_effect_mean_syn_sd_BH")
+  for (method in method_cols) {
     disco_df <- fit_df_called_clinvar[!is.na(fit_df_called_clinvar[[paste0(method, "_disc")]]) & fit_df_called_clinvar[[paste0(method, "_disc")]],]
     nonzero_effect_df <- fit_df_called_clinvar[fit_df_called_clinvar$class=="pathogenic",]
+    if (method == "FACS_double_sample_repq_syn_recalibrated_mu_mean") {
+      print(disco_df)
+      print(nonzero_effect_df)
+    }
 
     FDR <- sum(disco_df$class=="benign") / nrow(disco_df)
     FNR <- sum(nonzero_effect_df[!is.na(nonzero_effect_df[[paste0(method, "_isnull")]]),][[paste0(method, "_isnull")]]) / nrow(nonzero_effect_df)
@@ -915,13 +1144,17 @@ make_am_curve_df <- function(fit_df, am_df, model) {
   } else {
     fit_df_called_am <- merge(fit_df_called, am_df)
   }
-  methods <- effect_cols
-  for (method in effect_cols) {
-    if (paste0(method, "_syn_sd_disc") %in% colnames(fit_df_called_am)) {
-        methods <- c(methods, paste0(method, "_syn_sd"))
-    }
-  }
-  for (method in methods) {
+  # method_cols <- effect_cols
+  # # add other ML and weight bin methods: syn_sd_cut
+  # for (base_method in c("weight_effect_mean", "ML_effect_mean")) {
+  #   other_methods <- paste0(base_method, c("_syn_sd", "_syn_sd_BH", "_ttest", "_lik_simes", "_lik_fishers"))
+  #   method_cols <- c(method_cols, other_methods)
+  # }
+  # method_cols <- c(method_cols, "enrich_score_syn_sd")
+  method_cols <- c("FACS_double_sample_repq_syn_recalibrated_mu_mean", "weight_effect_mean_syn_sd_BH",
+                              "enrich_score", "enrich_score_syn_sd", "ML_effect_mean_syn_sd_BH")
+  for (method in method_cols) {
+    print(method)
     TP <- 0
     FP <- 0
     TN <- 0
@@ -959,6 +1192,7 @@ get_nonsense_FNR_df <- function(fit_df, model="FACS_double_sample_repq") {
   # get fit df
   effect_cols <- c(paste0(model, "_mu_mean"), paste0(model, "_syn_recalibrated_mu_mean"), "enrich_score", "weight_effect_mean", "shep_effect_mean", "ML_effect_mean")
   sd_cols <- c(NA, NA, "enrich_SE", "weight_effect_se", "shep_effect_se", "ML_effect_se")
+  # for (sig_cutoff in seq(0.999, 0.8, length=100)) {
   sig_cutoff <- 0.95
   fit_df_called <- label_significant(fit_df, 
                                 effect_cols,
@@ -966,7 +1200,9 @@ get_nonsense_FNR_df <- function(fit_df, model="FACS_double_sample_repq") {
                                 sig_cutoff)
   # filter to one obs per variant to get FDR on variant scale
   fit_df_called <- fit_df_called %>% group_by(hgvs) %>% filter(row_number() == 1)
-  for (method in effect_cols) {
+  method_cols <- c("FACS_double_sample_repq_syn_recalibrated_mu_mean", "weight_effect_mean_syn_sd", "weight_effect_mean_syn_sd_BH",
+                              "enrich_score", "enrich_score_syn_sd", "ML_effect_mean_syn_sd_BH")
+  for (method in method_cols) {
     rank_df <- fit_df_called
     nonzero_effect_df <- rank_df[rank_df$type == "nonsense",]
     FNR <- sum(nonzero_effect_df[!is.na(nonzero_effect_df[[paste0(method, "_isnull")]]),][[paste0(method, "_isnull")]]) / nrow(nonzero_effect_df)
@@ -974,15 +1210,6 @@ get_nonsense_FNR_df <- function(fit_df, model="FACS_double_sample_repq") {
     # compute sim metrics
     model_FDR <- data.frame(method, FNR, sens, sig_cutoff)
     FDR_FNR_df <- rbind(FDR_FNR_df, model_FDR)
-    # add sd effects
-    if (paste0(method, "_syn_sd_disc") %in% colnames(rank_df)) {
-      method <- paste0(method, "_syn_sd")
-      FNR <- sum(nonzero_effect_df[!is.na(nonzero_effect_df[[paste0(method, "_isnull")]]),][[paste0(method, "_isnull")]]) / nrow(nonzero_effect_df)
-      sens <- 1-FNR
-      # compute sim metrics
-      model_FDR <- data.frame(method, FNR, sens, sig_cutoff)
-      FDR_FNR_df <- rbind(FDR_FNR_df, model_FDR)
-    }
   }
   # }
   return(FDR_FNR_df)
@@ -1058,18 +1285,62 @@ get_clinvar_FNR_df <- function(fit_df, model="FACS_double_sample") {
 
 # rename methods
 rename_methods <- function(FDR_FNR_df) {
+  # FDR_FNR_df$method != "FACS_phi_widepos_syndist_nfunc_rep_optim_mu_mean" & 
+  # FDR_FNR_df$method != "FACS_double_sample_syn_recalibrated_mu_mean" &
   FDR_FNR_df <- FDR_FNR_df[FDR_FNR_df$method != "shep_effect_mean" &
     FDR_FNR_df$method != "shep_effect_mean_syn_sd" &  
     FDR_FNR_df$method != "FACS_phi_widepos_syndist_nfunc_rep_optim_mu_mean" & 
     FDR_FNR_df$method != "FACS_phi_widepos_syndist_nfunc_rep_optim_syn_recalibrated_mu_mean",]
-  FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_repq_mu_mean",]$method <- "Lilace\n(unrecalibrated)"
-  FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_repq_syn_recalibrated_mu_mean",]$method <- "Lilace"
-  FDR_FNR_df[FDR_FNR_df$method=="enrich_score",]$method <- "enrich2\np-value"
-  FDR_FNR_df[FDR_FNR_df$method=="enrich_score_syn_sd",]$method <- "enrich2\n2sd"
-  FDR_FNR_df[FDR_FNR_df$method=="weight_effect_mean",]$method <- "mean bin\nnorm approx"
-  FDR_FNR_df[FDR_FNR_df$method=="weight_effect_mean_syn_sd",]$method <- "mean bin\n2sd"
-  FDR_FNR_df[FDR_FNR_df$method=="ML_effect_mean_syn_sd",]$method <- "ML\n2sd"
-  FDR_FNR_df[FDR_FNR_df$method=="ML_effect_mean",]$method <- "ML\nnorm approx"
+  # FDR_FNR_df <- FDR_FNR_df[FDR_FNR_df$method != "FACS_double_sample_syn_recalibrated_mu_mean",]
+  # FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_syn_recalibrated_mu_mean",]$method <- "Lilace"
+  # FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_mu_mean",]$method <- "Lilace\n(unrecalibrated)"
+  # FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_nopos_syn_recalibrated_mu_mean",]$method <- "Lilace\n(nopos)"
+  if ("FACS_double_sample_repq_mu_mean" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_repq_mu_mean",]$method <- "Lilace\n(unrecal)"
+  if ("FACS_double_sample_repq_mu_mean_qval" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_repq_mu_mean_qval",]$method <- "Lilace\n(q-val\nunrecal)"
+  if ("FACS_double_sample_repq_syn_recalibrated_mu_mean" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_repq_syn_recalibrated_mu_mean",]$method <- "Lilace"
+  if ("FACS_double_sample_repq_syn_recalibrated_mu_mean_qval" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_repq_syn_recalibrated_mu_mean_qval",]$method <- "Lilace\n(q-val)"
+
+  if ("FACS_double_sample_repq_nopos_mu_mean" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_repq_nopos_mu_mean",]$method <- "Lilace (nopos)\n(unrecal)"
+  if ("FACS_double_sample_repq_nopos_mu_mean_qval" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_repq_nopos_mu_mean_qval",]$method <- "Lilace (nopos)\n(q-val\nunrecal)"
+  if ("FACS_double_sample_repq_nopos_syn_recalibrated_mu_mean" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_repq_nopos_syn_recalibrated_mu_mean",]$method <- "Lilace\n(nopos)"
+  if ("FACS_double_sample_repq_nopos_syn_recalibrated_mu_mean_qval" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_repq_nopos_syn_recalibrated_mu_mean_qval",]$method <- "Lilace (nopos)\n(q-val)"
+
+  if ("FACS_double_sample_repq_mu_mean_ashr_lfsr" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_repq_mu_mean_ashr_lfsr",]$method <- "Lilace\n(unrecal)\n(ashr lfsr)"
+  if ("FACS_double_sample_repq_mu_mean_ashr_lfdr" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_repq_mu_mean_ashr_lfdr",]$method <- "Lilace\n(unrecal)\n(ashr lfdr)"
+  if ("FACS_double_sample_repq_mu_mean_ashr_qvalue" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_repq_mu_mean_ashr_qvalue",]$method <- "Lilace\n(unrecal)\n(ashr qval)"
+  if ("FACS_double_sample_repq_mu_mean_ashr_svalue" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_repq_mu_mean_ashr_svalue",]$method <- "Lilace\n(unrecal)\n(ashr sval)"
+
+  if ("FACS_double_sample_repq_syn_recalibrated_mu_mean_ashr_lfsr" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_repq_syn_recalibrated_mu_mean_ashr_lfsr",]$method <- "Lilace\n(ashr lfsr)"
+  if ("FACS_double_sample_repq_syn_recalibrated_mu_mean_ashr_lfdr" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_repq_syn_recalibrated_mu_mean_ashr_lfdr",]$method <- "Lilace\n(ashr lfdr)"
+  if ("FACS_double_sample_repq_syn_recalibrated_mu_mean_ashr_qvalue" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_repq_syn_recalibrated_mu_mean_ashr_qvalue",]$method <- "Lilace\n(ashr qval)"
+  if ("FACS_double_sample_repq_syn_recalibrated_mu_mean_ashr_svalue" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_repq_syn_recalibrated_mu_mean_ashr_svalue",]$method <- "Lilace\n(ashr sval)"
+
+  if ("lilace_VI_normal_mu_mean" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="lilace_VI_normal_mu_mean",]$method <- "Lilace VI"
+  if ("lilace_VI_normal_unrecal_mu_mean" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="lilace_VI_normal_unrecal_mu_mean",]$method <- "Lilace VI\n(unrecal)"
+  if ("lilace_VI_multivariate_normal_mu_mean" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="lilace_VI_multivariate_normal_mu_mean",]$method <- "Lilace VI (MV)"
+  if ("lilace_VI_multivariate_normal_unrecal_mu_mean" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="lilace_VI_multivariate_normal_unrecal_mu_mean",]$method <- "Lilace VI (MV)\n(unrecal)"
+  
+  if ("lilace_nopos_VI_normal_mu_mean" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="lilace_nopos_VI_normal_mu_mean",]$method <- "Lilace\n(nopos) VI"
+  if ("lilace_nopos_VI_normal_unrecal_mu_mean" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="lilace_nopos_VI_normal_unrecal_mu_mean",]$method <- "Lilace (nopos) VI\n(unrecal)"
+  if ("lilace_nopos_VI_multivariate_normal_mu_mean" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="lilace_nopos_VI_multivariate_normal_mu_mean",]$method <- "Lilace\n(nopos) VI (MV)"
+  if ("lilace_nopos_VI_multivariate_normal_unrecal_mu_mean" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="lilace_nopos_VI_multivariate_normal_unrecal_mu_mean",]$method <- "Lilace (nopos) VI (MV)\n(unrecal)"
+  # FDR_FNR_df[FDR_FNR_df$method=="FACS_double_sample_syn_shrinkage_syn_recalibrated_mu_mean",]$method <- "Lilace\n(syn1)"
+  # FDR_FNR_df[FDR_FNR_df$method=="FACS_phi_widepos_syndist_nfunc_rep_optim_syn_recalibrated_mu_mean",]$method <- "prev FACS model"
+  if ("enrich_score" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="enrich_score",]$method <- "enrich2\np-value"
+  if ("enrich_score_syn_sd" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="enrich_score_syn_sd",]$method <- "enrich2\n2sd"
+  if ("weight_effect_mean" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="weight_effect_mean",]$method <- "mean bin\nnorm approx"
+  if ("weight_effect_mean_syn_sd" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="weight_effect_mean_syn_sd",]$method <- "mean bin\n2sd"
+  if ("weight_effect_mean_syn_sd_BH" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="weight_effect_mean_syn_sd_BH",]$method <- "mean bin\nBH"
+  if ("weight_effect_mean_ttest" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="weight_effect_mean_ttest",]$method <- "mean bin\nt-test"
+  if ("weight_effect_mean_lik_simes" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="weight_effect_mean_lik_simes",]$method <- "mean bin\nsimes"
+  if ("weight_effect_mean_lik_fishers" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="weight_effect_mean_lik_fishers",]$method <- "mean bin\nfishers"
+  # FDR_FNR_df[FDR_FNR_df$method=="shep_effect_mean_syn_sd",]$method <- "shep MoM syn sd"
+  if ("ML_effect_mean_syn_sd" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="ML_effect_mean_syn_sd",]$method <- "ML\n2sd"
+  if ("ML_effect_mean" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="ML_effect_mean",]$method <- "ML\nnorm approx"
+  if ("ML_effect_mean_syn_sd_BH" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="ML_effect_mean_syn_sd_BH",]$method <- "ML\nBH" 
+  if ("ML_effect_mean_ttest" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="ML_effect_mean_ttest",]$method <- "ML\nt-test"
+  if ("ML_effect_mean_lik_simes" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="ML_effect_mean_lik_simes",]$method <- "ML\nsimes"
+  if ("ML_effect_mean_lik_fishers" %in% FDR_FNR_df$method) FDR_FNR_df[FDR_FNR_df$method=="ML_effect_mean_lik_fishers",]$method <- "ML\nfishers"
   return(FDR_FNR_df)
 }
 

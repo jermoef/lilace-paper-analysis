@@ -23,10 +23,10 @@ n_pos_vals: [20]
 
 # params: ["none"]
 # param_vals: [[0]]
-params: ["gate_offset"]
-param_vals: [[3]]
+params: ["n_replicates"]
+param_vals: [[1, 2]]
 datasets: ['gpcr_ph55_20pos']
-models: ['FACS_double_sample_repq']
+models: ['FACS_double_sample']
 methods: ['enrich2', 'ML', 'MoM', 'weight_mean']
 
 # model stuff

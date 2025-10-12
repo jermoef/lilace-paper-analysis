@@ -30,6 +30,8 @@ tsv_oct1_rescaled <- tsv_oct1_rescaled %>% arrange(mutation, position)
 ## Plot results
 ```{r}
 source("../../src/plot_func.R")
+Sys.setlocale(category = "LC_COLLATE", locale = "C")
+tsv_oct1_rescaled <- tsv_oct1_rescaled %>% arrange(mutation, position)
 # discovery heatmap
 tsv_oct1_rescaled$discovery <- ifelse(tsv_oct1_rescaled$discovery05 == -1, "LOF", ifelse(tsv_oct1_rescaled$discovery05 == 1, "GOF", "Not significant"))
 
@@ -41,7 +43,8 @@ scoreHeatmap(tsv_oct1_rescaled, "data_figures/oct1", score.col="effect", name="o
 source("../../src/plot_func.R")
 scoreHeatmap(tsv_oct1_rescaled[tsv_oct1_rescaled$position > 281 & tsv_oct1_rescaled$position < 321,], "data_figures/oct1", score.col="discovery", name="oct1_rescaled_discovery05_heatmap_repq_281-322", x.text=6, seq.text=3, y.text=8, discovery_score=T, npos=40, ht=4, wd = 7.5)
 
-scoreHeatmap(tsv_oct1_rescaled[tsv_oct1_rescaled$position > 281 & tsv_oct1_rescaled$position < 321,], "data_figures/oct1", score.col="effect", name="oct1_rescaled_score_heatmap_repq_281-322", x.text=6, seq.text=3, y.text=8, npos=40, ht=4, wd = 7.5)
+source("../../src/plot_func.R")
+scoreHeatmap(tsv_oct1_rescaled[tsv_oct1_rescaled$position > 281 & tsv_oct1_rescaled$position < 321,], "data_figures/oct1", score.col="effect", name="oct1_rescaled_score_heatmap_repq_281-322", x.text=6, seq.text=3, y.text=8, npos=40, ht=4, wd = 7.5, c.pallete="Blue-Red")
 
 # lfsr heatmap
 # scoreHeatmap(tsv_oct1_rescaled, "data_figures/oct1", score.col="lfsr", name="oct1_rescaled_lfsr_heatmap", x.text=2.5, seq.text=0.75, y.text=2)
@@ -132,10 +135,11 @@ sd_cols <- c(NA,"enrich_SE", "weight_effect_se", "ML_effect_se")
 c_thresh <- 0.95
 oct1_rescaled_fit_df_called <- label_significant(oct1_rescaled_fit_df, effect_cols, sd_cols, 0.95)
 
-oct1_method_df <- distinct(oct1_rescaled_fit_df_called[c("hgvs", 
+oct1_method_df <- distinct(oct1_rescaled_fit_df_called[c("hgvs", "total_counts",
                                                          "enrich_score", "enrich_pval_adjusted", "enrich_score_disc", "enrich_score_syn_sd_disc",
-                                                         "weight_effect_mean", "weight_effect_mean_syn_sd_disc", "weight_effect_se")])
-colnames(oct1_method_df) <- c("hgvs", "enrich", "enrich_pval", "enrich_pval_disc", "enrich_syn_sd_disc", "weight_mean", "weight_mean_disc", "weight_mean_se")
+                                                         "weight_effect_mean", "weight_effect_mean_syn_sd_disc", 
+                                                         "weight_effect_mean_syn_sd_BH_disc", "weight_effect_se")])
+colnames(oct1_method_df) <- c("hgvs", "total_counts", "enrich", "enrich_pval", "enrich_pval_disc", "enrich_syn_sd_disc", "weight_mean", "weight_mean_disc", "weight_mean_BH_disc", "weight_mean_se")
 tsv_oct1_rescaled <- merge(tsv_oct1_rescaled, oct1_method_df)
 
 scoreHeatmap(tsv_oct1_rescaled, "plots", score.col="enrich", name="oct1_enrich_score_heatmap", x.text=2.5, seq.text=0.75, y.text=2)
@@ -189,14 +193,6 @@ ggsave("data_figures/oct1/comparison_scatter.png", p, height=5, width=10)
 # 
 # source("../../src/plot_func.R")
 # scoreHeatmap(tsv_oct1_rescaled, "plots/figures/oct1_supp", score.col="discovery_cat", name="oct1_discovery_cat_heatmap", x.text=2.5, seq.text=0.75, y.text=2, compare_score=T)
-```
-
-# get numbers of model differences versus original approach
-```{r}
-
-
-
-
 ```
 
 
@@ -275,14 +271,14 @@ source("../../src/plot_func.R")
 tsv_oct1_rescaled$enrich_disc <- tsv_oct1_rescaled$enrich_pval_disc
 model_enrich_scatter <- plot_method_scatter(tsv_oct1_rescaled, "effect", "enrich", "Lilace", "Enrich2 (p-val)", F)
 print(model_enrich_scatter)
-ggsave("data_figures/oct1/oct1_enrich_scatter.png", model_enrich_scatter, width=9, height=6)
+ggsave("data_figures/oct1/oct1_enrich_scatter.png", model_enrich_scatter, width=6.75, height=4.5)
 model_enrich_scatter <- plot_method_scatter(tsv_oct1_rescaled, "effect", "enrich", "Lilace", "Enrich2", T)
 print(model_enrich_scatter)
 
 tsv_oct1_rescaled$enrich_disc <- tsv_oct1_rescaled$enrich_syn_sd_disc
 model_enrich_scatter <- plot_method_scatter(tsv_oct1_rescaled, "effect", "enrich", "Lilace", "Enrich2 (2sd)", F)
 print(model_enrich_scatter)
-ggsave("data_figures/oct1/oct1_enrich_syn_sd_scatter.png", model_enrich_scatter, width=9, height=6)
+ggsave("data_figures/oct1/oct1_enrich_syn_sd_scatter.png", model_enrich_scatter, width=6.75, height=4.5)
 model_enrich_scatter <- plot_method_scatter(tsv_oct1_rescaled, "effect", "enrich", "Lilace", "Enrich2 (2sd)", T)
 print(model_enrich_scatter)
 # zoomed in diff
@@ -303,9 +299,15 @@ print(model_enrich_scatter)
 ```{r}
 source("../../src/plot_func.R")
 # diff scatter plot
-model_weight_scatter <- plot_method_scatter(tsv_oct1_rescaled, "effect", "weight_mean", "Lilace", "Mean bin", F, title="Mean bin vs Lilace effects")
+model_weight_scatter <- plot_method_scatter(tsv_oct1_rescaled, "effect", "weight_mean", "Lilace", "Mean bin", F, title="Mean bin (2sd) vs Lilace effects")
 model_weight_scatter
-ggsave("data_figures/oct1/oct1_weight_scatter.png", model_weight_scatter, width=9, height=6)
+ggsave("data_figures/oct1/oct1_weight_scatter.png", model_weight_scatter, width=6.75, height=4.5)
+
+tsv_oct1_rescaled$weight_mean_BH <- tsv_oct1_rescaled$weight_mean
+model_weight_scatter <- plot_method_scatter(tsv_oct1_rescaled, "effect", "weight_mean_BH", "Lilace", "Mean bin (BH)", F, title="Mean bin (BH) vs Lilace effects")
+model_weight_scatter
+ggsave("data_figures/oct1/oct1_weight_BH_scatter.png", model_weight_scatter, width=9, height=6)
+ggsave("data_figures/oct1/oct1_weight_BH_scatter_resized.png", model_weight_scatter, width=6.75, height=4.5)
 
 model_weight_scatter <- plot_method_scatter(tsv_oct1_rescaled, "effect", "weight_mean", "Lilace", "Mean bin", T)
 model_weight_scatter
@@ -398,35 +400,36 @@ ggplot(tsv_oct1_rescaled, aes(x=position, y=pos_sum)) + geom_line() + theme_bw()
 
 ## Position GOF / LOF discovery differences plot overlaid on agree plot
 ```{r}
-# getwd()
+getwd()
 # comp_method <- "orig_disc"
+# # comp_method <- "weight_mean_BH_disc"
 # tsv_oct1_rescaled[is.na(tsv_oct1_rescaled[[comp_method]]),][[comp_method]] <- F
 # # make plot where agree + separate lines for the additional discoveries
 # 
 # # overlay 2sd and new plot pos sums
 # 
 # # make top position plot (GOF)
-# tsv_oct1_rescaled$gof_effect_both <- ifelse((tsv_oct1_rescaled$discovery05 == 1 & tsv_oct1_rescaled[[comp_method]]) & 
-#                                               tsv_oct1_rescaled$effect > 0, 
+# tsv_oct1_rescaled$gof_effect_both <- ifelse((tsv_oct1_rescaled$discovery05 == 1 & tsv_oct1_rescaled[[comp_method]]) &
+#                                               tsv_oct1_rescaled$effect > 0,
 #                                               tsv_oct1_rescaled$effect, 0)
 # tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum_both_gof=sum(abs(gof_effect_both)))
 # 
 # tsv_oct1_rescaled$gof_effect_2sd <- ifelse((tsv_oct1_rescaled[[comp_method]]) &
-#                                                 tsv_oct1_rescaled$weight_mean > 0, 
+#                                                 tsv_oct1_rescaled$weight_mean > 0,
 #                                               tsv_oct1_rescaled$effect, 0)
 # tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum_2sd_gof=sum(abs(gof_effect_2sd)))
 # 
 # tsv_oct1_rescaled$gof_effect_model <- ifelse((tsv_oct1_rescaled$discovery05 == 1) &
-#                                                 tsv_oct1_rescaled$effect > 0, 
+#                                                 tsv_oct1_rescaled$effect > 0,
 #                                               tsv_oct1_rescaled$effect, 0)
 # tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum_model_gof=sum(abs(gof_effect_model)))
 # 
-# p_gof <- ggplot(tsv_oct1_rescaled, aes(x=position)) + 
-#   geom_line(aes(y=pos_sum_both_gof, col="both"), alpha=0.5) +  
-#   geom_line(aes(y=pos_sum_2sd_gof, col="2sd"), alpha=0.5) +  
+# p_gof <- ggplot(tsv_oct1_rescaled, aes(x=position)) +
+#   geom_line(aes(y=pos_sum_both_gof, col="both"), alpha=0.5) +
+#   geom_line(aes(y=pos_sum_2sd_gof, col="2sd"), alpha=0.5) +
 #   geom_line(aes(y=pos_sum_model_gof, col="model"), alpha=0.5) +
 #   scale_color_manual(name = "Discovery set", values = c("both" = "black", "model" = "cyan", "2sd" = "darkorange")) +
-#   theme_cowplot() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20)) + ylab("GOF effect by position") + 
+#   theme_cowplot() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20)) + ylab("GOF effect by position") +
 #   theme(axis.title.x = element_blank(), axis.text.x = element_blank()) +
 #   theme(plot.margin = unit(c(0,0,0,0), "cm"))
 # ggsave(paste0("oct1_main/pos_scores_gof_", comp_method, ".png"), p_gof, width=20)
@@ -434,23 +437,23 @@ ggplot(tsv_oct1_rescaled, aes(x=position, y=pos_sum)) + geom_line() + theme_bw()
 # 
 # # make bottom position plot (LOF)
 # tsv_oct1_rescaled$lof_effect_both <- ifelse((tsv_oct1_rescaled$discovery05 == -1 & tsv_oct1_rescaled[[comp_method]]) &
-#                                                 tsv_oct1_rescaled$effect < 0, 
+#                                                 tsv_oct1_rescaled$effect < 0,
 #                                               tsv_oct1_rescaled$effect, 0)
 # tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum_both_lof=sum(abs(lof_effect_both)))
 # 
 # tsv_oct1_rescaled$lof_effect_2sd <- ifelse((tsv_oct1_rescaled[[comp_method]]) &
-#                                                 tsv_oct1_rescaled$weight_mean < 0, 
+#                                                 tsv_oct1_rescaled$weight_mean < 0,
 #                                               tsv_oct1_rescaled$effect, 0)
 # tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum_2sd_lof=sum(abs(lof_effect_2sd)))
 # 
 # tsv_oct1_rescaled$lof_effect_model <- ifelse((tsv_oct1_rescaled$discovery05 == -1) &
-#                                                 tsv_oct1_rescaled$effect < 0, 
+#                                                 tsv_oct1_rescaled$effect < 0,
 #                                               tsv_oct1_rescaled$effect, 0)
 # tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum_model_lof=sum(abs(lof_effect_model)))
 # 
-# p_lof <- ggplot(tsv_oct1_rescaled, aes(x=position)) + 
-#   geom_line(aes(y=pos_sum_both_lof, col="both"), alpha=0.5) +  
-#   geom_line(aes(y=pos_sum_2sd_lof, col="2sd"), alpha=0.5) +  
+# p_lof <- ggplot(tsv_oct1_rescaled, aes(x=position)) +
+#   geom_line(aes(y=pos_sum_both_lof, col="both"), alpha=0.5) +
+#   geom_line(aes(y=pos_sum_2sd_lof, col="2sd"), alpha=0.5) +
 #   geom_line(aes(y=pos_sum_model_lof, col="model"), alpha=0.5) +
 #   scale_y_reverse() +
 #   scale_color_manual(name = "Discovery set", values = c("both" = "black", "model" = "cyan", "2sd" = "darkorange")) +
@@ -461,7 +464,7 @@ ggplot(tsv_oct1_rescaled, aes(x=position, y=pos_sum)) + geom_line() + theme_bw()
 # # combine plots
 # p_full <- p_gof / p_lof + plot_layout(axis_titles = "collect", guides = "collect")
 # ggsave(paste0("oct1_main/pos_scores_", comp_method, ".png"), p_full, width=20)
-# 
+
 
 # only model
 
@@ -472,6 +475,11 @@ comp_name <- "Enrich2"
 # comp_method <- "weight_mean_disc"
 # comp_score <- "weight_mean"
 # comp_name <- "Mean bin"
+
+# comp_method <- "weight_mean_BH_disc"
+# comp_score <- "weight_mean"
+# comp_name <- "Mean bin (BH)"
+
 # make same plot using only signifance and not effect size
 # overlay 2sd and new plot pos sums
 tsv_oct1_rescaled$gof_effect_both <- ifelse((tsv_oct1_rescaled$discovery05 == 1 & tsv_oct1_rescaled[[comp_method]]) &
@@ -493,7 +501,7 @@ tsv_oct1_rescaled <- tsv_oct1_rescaled %>% group_by(position) %>% mutate(pos_sum
 set_lwd <- 1
 
 
-text_size <- 20
+text_size <- 25
 axis_text_size <- 20
 scale_color <- c("black", "cyan", "orange")
 names(scale_color) <- c("both", "Lilace", comp_name)
@@ -501,8 +509,9 @@ p_gof <- ggplot(tsv_oct1_rescaled, aes(x=position)) +
   geom_line(aes(y=pos_sum_both_gof, col="both"), alpha=0.5, lwd=set_lwd) +  
   geom_line(aes(y=pos_sum_2sd_gof, col=!!comp_name), alpha=0.5, lwd=set_lwd) +  
   geom_line(aes(y=pos_sum_model_gof, col="Lilace"), alpha=0.5, lwd=set_lwd) +
+  ylim(c(0,21)) +
   scale_color_manual(name = "Discovery set", values = scale_color) +
-  theme_cowplot() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20)) + ylab("# called GOF by position") + 
+  theme_cowplot() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20)) + ylab("# called GOF by pos") + 
   theme(axis.title.x = element_blank(), 
         text = element_text(size = text_size),
         axis.text = element_text(size = axis_text_size), axis.text.x = element_blank(), plot.margin = unit(c(0,0,0,0), "cm"))
@@ -528,9 +537,10 @@ p_lof <- ggplot(tsv_oct1_rescaled, aes(x=position)) +
   geom_line(aes(y=pos_sum_both_lof, col="both"), alpha=0.5, lwd=set_lwd) +  
   geom_line(aes(y=pos_sum_2sd_lof, col=!!comp_name), alpha=0.5, lwd=set_lwd) +  
   geom_line(aes(y=pos_sum_model_lof, col="Lilace"), alpha=0.5, lwd=set_lwd) +
+  ylim(c(0,21)) +
   scale_y_reverse() +
   scale_color_manual(name = "Discovery set", values = scale_color) +
-  theme_cowplot() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20), position="top")+ ylab("# called LOF by position") +
+  theme_cowplot() + scale_x_continuous(breaks = scales::pretty_breaks(n = 20), position="top")+ ylab("# called LOF by pos") +
   theme(text = element_text(size = text_size),
         axis.text = element_text(size = axis_text_size), plot.margin = unit(c(0,0,0,0), "cm"))
 ggsave(paste0("data_figures/oct1/pos_sig_lof_", comp_method, ".png"), p_lof, width=20)
@@ -553,11 +563,53 @@ ggsave("data_figures/oct1/pos_weight_se.png")
 ```
 
 
-## Discovery set differences / trends
+## Discovery set by coverage
 ```{r}
+# comp_method <- "enrich_pval_disc"
+# comp_score <- "enrich"
+# comp_name <- "Enrich2"
 
+# comp_method <- "weight_mean_disc"
+# comp_score <- "weight_mean"
+# comp_name <- "Mean bin"
 
+comp_method <- "weight_mean_BH_disc"
+comp_score <- "weight_mean"
+comp_name <- "Mean bin (BH)"
+tsv_oct1_rescaled$weight_mean_BH <- tsv_oct1_rescaled$weight_mean
 
+tsv_oct1_rescaled$effect_both <- ifelse(tsv_oct1_rescaled$discovery05 != 0 & tsv_oct1_rescaled[[comp_method]], 1, 0)
+tsv_oct1_rescaled$effect_comp <- ifelse(tsv_oct1_rescaled$discovery05 == 0 & tsv_oct1_rescaled[[comp_method]], 1, 0)
+tsv_oct1_rescaled$effect_lilace <- ifelse(tsv_oct1_rescaled$discovery05 != 0 & !tsv_oct1_rescaled[[comp_method]], 1, 0)
+tsv_oct1_rescaled$effect_neither <- ifelse(tsv_oct1_rescaled$discovery05 == 0 & !tsv_oct1_rescaled[[comp_method]], 1, 0)
+tsv_oct1_rescaled$cov_call_cat <- as.factor(ifelse(tsv_oct1_rescaled$effect_lilace, "Lilace", 
+                                    ifelse(tsv_oct1_rescaled$effect_comp, 
+                                           comp_name, ifelse(tsv_oct1_rescaled$effect_both, "both", "neither"))))
+# tsv_oct1_rescaled_cov <- tsv_oct1_rescaled %>% arrange(cov_call_cat, .locale = "en")
+call_colors <- setNames(c('#4e79a7', '#76b7b2', '#f28e2b', '#e15759'),# 
+                          c("both", "neither", "Lilace", comp_name))
+tsv_oct1_rescaled$cov_call_cat <- relevel(tsv_oct1_rescaled$cov_call_cat, "Lilace")
+tsv_oct1_rescaled$cov_call_cat <- relevel(tsv_oct1_rescaled$cov_call_cat, comp_name)
+tsv_oct1_rescaled$cov_call_cat <- relevel(tsv_oct1_rescaled$cov_call_cat, "both")
+tsv_oct1_rescaled$cov_call_cat <- relevel(tsv_oct1_rescaled$cov_call_cat, "neither")
+tsv_oct1_rescaled_cov <- tsv_oct1_rescaled
+
+p <- ggplot(tsv_oct1_rescaled_cov, aes(x=total_counts, fill=as.factor(cov_call_cat))) + geom_histogram(alpha=0.65, position = "stack", color="black", bins=25) + 
+  theme_cowplot() + scale_fill_manual(values=call_colors) + xlab("Total Variant Counts") + ylab("Freq") +
+  theme(text = element_text(size = 20), axis.text = element_text(size = 20)) +
+  guides(fill=guide_legend(title="Discovery calls", override.aes = list(alpha=1))) +
+  ggtitle(paste0("Lilace vs ", comp_name, " call differences by coverage"))
+print(p)
+ggsave(paste0("data_figures/oct1/", comp_method, "_coverage.png"), p, height=6, width=9)
+
+call_colors <- setNames(c('#4e79a7', '#76b7b2', '#f28e2b', '#e15759'),# 
+                          c("both", "neither", "Lilace", comp_name))
+p <- ggplot(tsv_oct1_rescaled_cov, aes(x=weight_mean_se, fill=as.factor(cov_call_cat))) + geom_histogram(alpha=0.65, position = "stack", color="black", bins=25) + 
+  theme_cowplot() + scale_fill_manual(values=call_colors)+ xlab("Mean Bin s.e.") + ylab("Freq") +
+  theme(text = element_text(size = 20), axis.text = element_text(size = 20)) +
+  guides(fill=guide_legend(title="Discovery calls", override.aes = list(alpha=1))) +
+  ggtitle(paste0("Lilace vs ", comp_name, " call differences by S.E."))
+ggsave(paste0("data_figures/oct1/", comp_method, "_se.png"), p, height=6, width=9)
 
 ```
 

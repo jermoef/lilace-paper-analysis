@@ -68,7 +68,7 @@ for (i in 1:length(vars)) {
 }
 
 
-syn_counts <- data[data$type=="synonymous",c("c_0", "c_1", "c_2", "c_3")] %>% ungroup()
+syn_counts <- data[data$type=="synonymous",] %>% ungroup() %>% select(starts_with("c_"))
 print(head(syn_counts))
 opt_out <- optim(c(1000, 6.5), function(theta) cdf_lik_log_multi(theta, as.matrix(syn_counts), breaks, cdf=plnorm))
 # estimate LOF effect mean + sd, GOF effect mean + sd
